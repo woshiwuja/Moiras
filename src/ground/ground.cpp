@@ -1,0 +1,5 @@
+class Ground {
+	
+	Ground(){}
+	~Ground(){}
+};

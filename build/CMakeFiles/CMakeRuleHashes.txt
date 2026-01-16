@@ -1,0 +1,3 @@
+# Hashes of file build rules.
+8fdc22fc7b1a56806ad61cb1582235a0 CMakeFiles/copy_assets
+a1c2bc8b0f7620e9ec84d581a5c5c323 CMakeFiles/copy_steamid

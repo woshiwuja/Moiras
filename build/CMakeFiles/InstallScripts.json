@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/federico/Moiras/build/cmake_install.cmake",
-		"/home/federico/Moiras/build/src/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

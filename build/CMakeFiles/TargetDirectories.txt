@@ -1,7 +1,0 @@
-/home/federico/Moiras/build/CMakeFiles/copy_assets.dir
-/home/federico/Moiras/build/CMakeFiles/copy_steamid.dir
-/home/federico/Moiras/build/CMakeFiles/Moiras.dir
-/home/federico/Moiras/build/CMakeFiles/edit_cache.dir
-/home/federico/Moiras/build/CMakeFiles/rebuild_cache.dir
-/home/federico/Moiras/build/src/CMakeFiles/edit_cache.dir
-/home/federico/Moiras/build/src/CMakeFiles/rebuild_cache.dir

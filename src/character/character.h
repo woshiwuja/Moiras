@@ -1,21 +1,19 @@
+#include "../game/game_object.h"
 #include <raylib.h>
 #include <string>
-struct Quat {
-  float w, x, y, z;
-};
-struct XVector3 {
-  float x, y, z;
-  XVector3 normalize();
-};
-struct Euler {
-  float x, y, z;
-};
-class Character {
+namespace moiras {
+class Character : public GameObject {
+private:
+  Quaternion quat_rotation;
 public:
   int health;
   std::string name;
-  XVector3 position;
-  Euler eulerRot;
+  Vector3 eulerRot;
   float scale;
   Model *model;
+  Character();
+  Character(Model*);
+  void update() override;
+  virtual void draw() override;
 };
+} // namespace moiras

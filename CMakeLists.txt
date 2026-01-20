@@ -12,6 +12,13 @@ add_subdirectory(src)
 add_executable(
 	Moiras
         src/main.cpp
+	#src/clay.h
+	#src/clay_renderer_raylib.c
 	src/character/character.h
+	src/character/character.cpp
+	src/game/game.cpp
+	src/game/game.h
+	src/game/game_object.h
+	src/game/game_object.cpp
 )
 target_link_libraries(Moiras PRIVATE raylib)

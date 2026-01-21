@@ -18,6 +18,13 @@ add_executable(
 	src/character/character.cpp
 	src/game/game.cpp
 	src/game/game.h
+#	src/gui/gui.cpp
+#	src/gui/gui.h
+	src/map/map.cpp
+	src/map/map.h
+	src/models/models.cpp
+	src/models/models.h
+	raygui/src/raygui.h
 	src/game/game_object.h
 	src/game/game_object.cpp
 )

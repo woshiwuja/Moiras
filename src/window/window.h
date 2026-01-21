@@ -28,7 +28,7 @@ public:
       : width(width), height(height), title(title), exitKey(exitKey),
         targetFps(targetFps) {}
   void init() {
-    //SetConfigFlags(FLAG_MSAA_4X_HINT);
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(width, height, title.c_str());
     if (fullscreen) {
       ToggleFullscreen();

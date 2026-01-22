@@ -15,5 +15,6 @@ public:
   Character(Model*);
   void update() override;
   virtual void draw() override;
+  void gui() override;
 };
 } // namespace moiras

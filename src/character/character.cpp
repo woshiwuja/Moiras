@@ -27,6 +27,7 @@ void Character::update() {
 void Character::draw() {
   if (isVisible) {
     if (model != nullptr) {
+      DrawModel(*model, Vector3{10, 10, 10}, scale, WHITE);
     } else {
       DrawCube(Vector3{position.x, position.y + (scale / 2), position.z}, scale,
                scale, scale, GREEN);
@@ -34,4 +35,9 @@ void Character::draw() {
                     scale, scale, scale, BLACK);
     }
   }
+}
+
+void Character::gui() {
+  GuiLabel(Rectangle{100, 300, 180, 20}, TextFormat("[%s]", name.c_str()));
+  GuiSlider(Rectangle{100, 300, 200, 60}, "-", "+", &scale, 0.1, 100);
 }

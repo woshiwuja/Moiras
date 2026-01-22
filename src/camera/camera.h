@@ -1,5 +1,7 @@
 #include "../game/game_object.h"
 #include <iostream>
+#include <limits>
+#include <numeric>
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
@@ -7,6 +9,7 @@
 namespace moiras {
 class GameCamera : public GameObject {
 private:
+  Ray ray;
   Camera rcamera;
   int updateMode = 1; // AGGIUNTO: inizializzato a 1 per UpdateCameraPro
 
@@ -60,6 +63,12 @@ public:
   void setUpdateMode(int mode) { updateMode = mode; }
 
   void update() override {
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+      if (IsCursorHidden())
+        EnableCursor();
+      else
+        DisableCursor();
+    }
     if (updateMode == 0) {
       UpdateCamera(&rcamera, mode);
     } else {
@@ -81,6 +90,7 @@ public:
           (Vector3){mouseDelta.x * 0.05f, mouseDelta.y * 0.05f, 0.0f},
           GetMouseWheelMove() * -2.0f);
     }
+    ray = GetScreenToWorldRay(GetMousePosition(), rcamera);
   }
 
   void beginMode3D() { BeginMode3D(rcamera); }
@@ -89,9 +99,10 @@ public:
   void beginDrawing() {
     BeginDrawing();
     ClearBackground(BLACK);
-		rlClearScreenBuffers();
+    rlClearScreenBuffers();
   }
 
   void endDrawing() { EndDrawing(); }
+  Ray getRay() { return ray; };
 };
 } // namespace moiras

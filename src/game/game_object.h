@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <raylib.h>
+#include "../../raygui/src/raygui.h"
 #include <string>
 #include <utility>
 #include <vector>

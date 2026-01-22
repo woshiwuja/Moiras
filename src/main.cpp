@@ -1,3 +1,4 @@
+#define RAYGUI_IMPLEMENTATION
 #include "camera/camera.h"
 #include "character/character.h"
 #include "game/game.h"
@@ -14,7 +15,9 @@ int main(void) {
   Game game = Game();
   Window window = Window(screenWidth, screenHeight, title, KEY_END, 144, true);
   window.init();
-  auto character = std::make_unique<Character>();
+  auto cube = std::make_unique<Character>();
+  auto model = LoadModel("../assets/wheeled_robot.glb");
+  auto character = std::make_unique<Character>(&model);
   auto mainCamera = std::make_unique<GameCamera>("MainCamera");
   auto *cameraPtr = mainCamera.get();
   std::unique_ptr<Map> map =

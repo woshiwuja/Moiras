@@ -47,4 +47,5 @@ GameObject *GameObject::getChildByName(const std::string &name) {
   }
   return nullptr;
 };
+
 } // namespace moiras

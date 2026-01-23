@@ -21,7 +21,7 @@ public:
     targetFps = 60;
   }
   ~Window() {
-    CloseWindow(); // Close window and OpenGL context
+    //CloseWindow(); // Close window and OpenGL context
   }
   Window(int width, int height, string title, int exitKey, int targetFps,
          bool fullscreen)

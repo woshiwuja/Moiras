@@ -1,33 +1,38 @@
 #pragma once
+#include "../../raygui/src/raygui.h"
 #include <memory>
 #include <raylib.h>
-#include "../../raygui/src/raygui.h"
 #include <string>
 #include <utility>
 #include <vector>
 using namespace std;
+
 namespace moiras {
 class GameObject {
 private:
   static unsigned int nextId;
-
+  
 protected:
   vector<unique_ptr<GameObject>> children;
+  GameObject* parent; // CAMBIATO: raw pointer invece di unique_ptr
   unsigned int id;
-  string name;
 
 public:
+  string name;
   bool isVisible;
   Vector3 position;
+  
   GameObject(const string &name = "");
   GameObject(const GameObject &) = delete;
-  GameObject(GameObject &&other) noexcept = default;
-  GameObject &operator=(GameObject &&other) noexcept = default;
+  GameObject(GameObject &&other) noexcept;
+  GameObject &operator=(GameObject &&other) noexcept;
   GameObject &operator=(const GameObject &) = delete;
   virtual ~GameObject() = default;
+  
   virtual void update();
   virtual void draw();
   virtual void gui();
+  
   void addChild(unique_ptr<GameObject> child);
   GameObject *getChild();
   GameObject *getChildByName(const string &name);
@@ -57,8 +62,13 @@ public:
     return result;
   }
 
+  GameObject *getParent() {
+    return parent; // CAMBIATO: ritorna direttamente il raw pointer
+  }
+  
   // Getter/Setter
   string getName() const { return name; }
+  const char* getNameC() const { return name.c_str(); } // CORRETTO: ritorna const char*
   void setName(const string &n) { name = n; }
   unsigned int getId() const { return id; }
 };

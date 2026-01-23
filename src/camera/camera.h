@@ -1,7 +1,6 @@
 #include "../game/game_object.h"
 #include <iostream>
 #include <limits>
-#include <numeric>
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>

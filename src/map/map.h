@@ -1,3 +1,4 @@
+#pragma once
 #include "../game/game_object.h"
 #include "rlgl.h"
 #include <raylib.h>

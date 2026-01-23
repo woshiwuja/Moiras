@@ -62,7 +62,7 @@ Map &Map::operator=(Map &&other) noexcept {
 
 void Map::draw() {
   Vector3 offset = {0,3,0};
-  DrawModel(model, position, 2.0f, WHITE);
+  DrawModel(model, position, 1.0f, WHITE);
   BeginShaderMode(seaShaderLoaded);
   DrawModel(seaModel, Vector3Add(position, offset), 1.0f, WHITE);
   EndShaderMode();
@@ -103,7 +103,7 @@ std::unique_ptr<Map> mapFromModel(const std::string &filename) {
 void Map::loadSeaShader() {
   seaShaderLoaded =
       LoadShader(seaShaderVertex.c_str(), seaShaderFragment.c_str());
-  perlinNoiseImage = GenImagePerlinNoise(5000, 5000, 0, 0, 1.0f);
+  perlinNoiseImage = GenImagePerlinNoise(500, 500,1, 1, 1.0f);
   perlinNoiseMap = LoadTextureFromImage(perlinNoiseImage);
   UnloadImage(perlinNoiseImage);
   int perlinNoiseMapLoc = GetShaderLocation(seaShaderLoaded, "perlinNoiseMap");

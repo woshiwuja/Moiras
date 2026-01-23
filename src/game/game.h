@@ -8,6 +8,7 @@ class Game {
 public:
   GameObject root;
   Game();
+	void setup();
   void loop(Window window);
 };
 } // namespace moiras

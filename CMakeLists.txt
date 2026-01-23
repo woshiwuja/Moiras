@@ -9,6 +9,7 @@ add_custom_target(copy_steamid
         COMMAND ${CMAKE_COMMAND} -E copy steam_appid.txt ${CMAKE_CURRENT_BINARY_DIR}
 )
 add_subdirectory(src)
+add_subdirectory(raylib-cpp)
 add_executable(
 	Moiras
         src/main.cpp

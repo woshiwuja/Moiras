@@ -2,6 +2,7 @@
 #include "../models/models.h"
 #include <raylib.h>
 #include <raymath.h>
+#define RLIGHTS_IMPLEMENTATION
 
 namespace moiras {
 
@@ -61,10 +62,9 @@ Map &Map::operator=(Map &&other) noexcept {
 }
 
 void Map::draw() {
-  Vector3 offset = {0,3,0};
   DrawModel(model, position, 1.0f, WHITE);
   BeginShaderMode(seaShaderLoaded);
-  DrawModel(seaModel, Vector3Add(position, offset), 1.0f, WHITE);
+  DrawModel(seaModel, position , 1.0f, WHITE);
   EndShaderMode();
 }
 
@@ -87,14 +87,12 @@ std::unique_ptr<Map> mapFromModel(const std::string &filename) {
   auto model = LoadModel(filename.c_str());
   // Calcola il bounding box del modello
   BoundingBox bounds = GetModelBoundingBox(model);
-  
+
   // Calcola il centro
-  Vector3 center = {
-    (bounds.min.x + bounds.max.x) / 2.0f,
-    (bounds.min.y + bounds.max.y) / 2.0f,
-    (bounds.min.z + bounds.max.z) / 2.0f
-  };
-  
+  Vector3 center = {(bounds.min.x + bounds.max.x) / 2.0f,
+                    (bounds.min.y + bounds.max.y) / 2.0f,
+                    (bounds.min.z + bounds.max.z) / 2.0f};
+
   // Centra il modello traslando di -center
   Matrix translation = MatrixTranslate(-center.x, -center.y, -center.z);
   model.transform = MatrixMultiply(model.transform, translation);
@@ -103,7 +101,7 @@ std::unique_ptr<Map> mapFromModel(const std::string &filename) {
 void Map::loadSeaShader() {
   seaShaderLoaded =
       LoadShader(seaShaderVertex.c_str(), seaShaderFragment.c_str());
-  perlinNoiseImage = GenImagePerlinNoise(500, 500,1, 1, 1.0f);
+  perlinNoiseImage = GenImagePerlinNoise(500, 500, 1, 1, 1.0f);
   perlinNoiseMap = LoadTextureFromImage(perlinNoiseImage);
   UnloadImage(perlinNoiseImage);
   int perlinNoiseMapLoc = GetShaderLocation(seaShaderLoaded, "perlinNoiseMap");
@@ -118,23 +116,5 @@ void Map::update() {
   SetShaderValue(seaShaderLoaded, GetShaderLocation(seaShaderLoaded, "time"),
                  &hiddenTimeCounter, SHADER_UNIFORM_FLOAT);
 };
-void Map::loadSkybox(const std::string& texturePath) {
-    Mesh cube = GenMeshCube(1.0f, 1.0f, 1.0f);
-    skyboxModel = LoadModelFromMesh(cube);
-    skyboxTexture = LoadTexture(texturePath.c_str());
-    skyboxShader = LoadShader(skyboxShaderVertex.c_str(), 
-                              skyboxShaderFragment.c_str());
-    skyboxModel.materials[0].shader = skyboxShader;
-    skyboxModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = skyboxTexture;
-}
 
-void Map::drawSkybox(Vector3 cameraPosition) {
-    rlDisableDepthMask();
-    rlDisableBackfaceCulling();
-    BeginShaderMode(skyboxShader);
-    DrawModel(skyboxModel, cameraPosition, 1.0f, WHITE);
-    EndShaderMode();
-    rlEnableBackfaceCulling();
-    rlEnableDepthMask();
-}
 } // namespace moiras

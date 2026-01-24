@@ -36,7 +36,13 @@ public:
   void addChild(unique_ptr<GameObject> child);
   GameObject *getChild();
   GameObject *getChildByName(const string &name);
-
+    size_t getChildCount() const { return children.size(); }
+    GameObject* getChildAt(size_t index) {
+        if (index < children.size()) {
+            return children[index].get();
+        }
+        return nullptr;
+    }
   // Template per ottenere primo figlio di tipo specifico
   template <typename T> T *getChildOfType() {
     for (auto &child : children) {

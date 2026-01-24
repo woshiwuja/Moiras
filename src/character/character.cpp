@@ -32,14 +32,10 @@ Character::~Character() {
 }
 
 // Move constructor
-Character::Character(Character&& other) noexcept
-    : GameObject(std::move(other)),
-      health(other.health),
-      name(std::move(other.name)),
-      eulerRot(other.eulerRot),
-      isVisible(other.isVisible),
-      scale(other.scale),
-      model(other.model),
+Character::Character(Character &&other) noexcept
+    : GameObject(std::move(other)), health(other.health),
+      name(std::move(other.name)), eulerRot(other.eulerRot),
+      isVisible(other.isVisible), scale(other.scale), model(other.model),
       quat_rotation(other.quat_rotation) {
   // Resetta il modello dell'altro per evitare double-free
   other.model = {0};
@@ -47,15 +43,15 @@ Character::Character(Character&& other) noexcept
 }
 
 // Move assignment
-Character& Character::operator=(Character&& other) noexcept {
+Character &Character::operator=(Character &&other) noexcept {
   if (this != &other) {
     GameObject::operator=(std::move(other));
-    
+
     // Libera il modello corrente
     if (model.meshCount > 0) {
       UnloadModel(model);
     }
-    
+
     // Trasferisci i dati
     health = other.health;
     name = std::move(other.name);
@@ -64,10 +60,10 @@ Character& Character::operator=(Character&& other) noexcept {
     scale = other.scale;
     model = other.model;
     quat_rotation = other.quat_rotation;
-    
+
     // Resetta il modello dell'altro
     other.model = {0};
-    
+
     TraceLog(LOG_INFO, "Character move-assigned: %s", name.c_str());
   }
   return *this;
@@ -75,16 +71,16 @@ Character& Character::operator=(Character&& other) noexcept {
 
 void Character::loadModel(const std::string &path) {
   TraceLog(LOG_INFO, "Loading model: %s", path.c_str());
-  
+
   // Scarica il modello precedente se esiste
   if (model.meshCount > 0) {
     TraceLog(LOG_INFO, "Unloading previous model");
     UnloadModel(model);
     model = {0};
   }
-  
+
   model = LoadModel(path.c_str());
-  
+
   if (model.meshCount > 0) {
     TraceLog(LOG_INFO, "Model loaded successfully: %d meshes", model.meshCount);
   } else {
@@ -102,7 +98,7 @@ void Character::unloadModel() {
 void Character::handleDroppedModel() {
   if (IsFileDropped()) {
     FilePathList droppedFiles = LoadDroppedFiles();
-    
+
     if (droppedFiles.count == 1) {
       if (IsFileExtension(droppedFiles.paths[0], ".obj") ||
           IsFileExtension(droppedFiles.paths[0], ".gltf") ||
@@ -110,20 +106,19 @@ void Character::handleDroppedModel() {
           IsFileExtension(droppedFiles.paths[0], ".vox") ||
           IsFileExtension(droppedFiles.paths[0], ".iqm") ||
           IsFileExtension(droppedFiles.paths[0], ".m3d")) {
-        
+
         auto character = std::make_unique<Character>();
         character->name = "Dropped Model";
-        
+
         character->loadModel(droppedFiles.paths[0]);
-        
+
         if (character->model.meshCount > 0) {
           auto bounds = GetMeshBoundingBox(character->model.meshes[0]);
-          TraceLog(LOG_INFO, "Model bounds: %.2f, %.2f, %.2f", 
-                   bounds.max.x - bounds.min.x,
-                   bounds.max.y - bounds.min.y, 
+          TraceLog(LOG_INFO, "Model bounds: %.2f, %.2f, %.2f",
+                   bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y,
                    bounds.max.z - bounds.min.z);
         }
-        
+
         auto parent = this->getParent();
         if (parent != nullptr) {
           TraceLog(LOG_INFO, "Adding character to parent");
@@ -134,7 +129,7 @@ void Character::handleDroppedModel() {
         }
       }
     }
-    
+
     UnloadDroppedFiles(droppedFiles);
   }
 }
@@ -165,18 +160,19 @@ void Character::snapToGround(const Model &ground) {
   Ray downRay;
   downRay.position = {position.x, position.y + 100.0f, position.z};
   downRay.direction = {0.0f, -1.0f, 0.0f};
-  
+
   RayCollision closest = {0};
   closest.hit = false;
   closest.distance = std::numeric_limits<float>::max();
-  
+
   for (int m = 0; m < ground.meshCount; m++) {
-    RayCollision hit = GetRayCollisionMesh(downRay, ground.meshes[m], ground.transform);
+    RayCollision hit =
+        GetRayCollisionMesh(downRay, ground.meshes[m], ground.transform);
     if (hit.hit && hit.distance < closest.distance) {
       closest = hit;
     }
   }
-  
+
   if (closest.hit) {
     position.y = closest.point.y;
   }

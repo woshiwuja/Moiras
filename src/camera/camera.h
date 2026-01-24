@@ -1,3 +1,4 @@
+#pragma once
 #include "../game/game_object.h"
 #include <iostream>
 #include <limits>
@@ -6,6 +7,7 @@
 #include <rlgl.h>
 
 namespace moiras {
+void handleCursor();
 class GameCamera : public GameObject {
 private:
   Ray ray;
@@ -59,38 +61,11 @@ public:
     updateMode = 1;
   }
 
-  void setUpdateMode(int mode) { updateMode = mode; }
+  void setUpdateMode(int mode) { updateMode = mode; };
 
-  void update() override {
-    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
-      if (IsCursorHidden())
-        EnableCursor();
-      else
-        DisableCursor();
-    }
-    if (updateMode == 0) {
-      UpdateCamera(&rcamera, mode);
-    } else {
-      Vector2 mouseDelta = GetMouseDelta();
-      if (fabsf(mouseDelta.x) > 300.0f)
-        mouseDelta.x = 300.0f;
-      if (fabsf(mouseDelta.y) > 300.0f)
-        mouseDelta.y = 300.0f;
-      UpdateCameraPro(
-          &rcamera,
-          (Vector3){
-              (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP)) * GetFrameTime() * 5 -
-                  (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN)) * GetFrameTime() *
-                      5,
-              (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) * GetFrameTime() * 5 -
-                  (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) * GetFrameTime() *
-                      5,
-              0.0f},
-          (Vector3){mouseDelta.x * 0.05f, mouseDelta.y * 0.05f, 0.0f},
-          GetMouseWheelMove() * -2.0f);
-    }
-    ray = GetScreenToWorldRay(GetMousePosition(), rcamera);
-  }
+  void cameraControl();
+
+  void update() override;
 
   void beginMode3D() { BeginMode3D(rcamera); }
 
@@ -104,4 +79,5 @@ public:
   void endDrawing() { EndDrawing(); }
   Ray getRay() { return ray; };
 };
+
 } // namespace moiras

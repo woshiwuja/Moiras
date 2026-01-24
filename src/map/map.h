@@ -42,7 +42,8 @@ public:
     seaModel = LoadModelFromMesh(seaMesh);
     seaModel.materials[0].shader = seaShaderLoaded;
   }
-  void loadSkybox(const std::string& texturePath);
+  void setFog();
+  void loadSkybox(const std::string &texturePath);
   void drawSkybox(Vector3 cameraPosition);
   void update() override;
 };

@@ -18,6 +18,8 @@ add_executable(
 	src/character/character.h
 	src/character/character.cpp
 	src/game/game.cpp
+	src/camera/camera.cpp
+	src/camera/camera.h
 	src/game/game.h
 #	src/gui/gui.cpp
 #	src/gui/gui.h
@@ -28,5 +30,10 @@ add_executable(
 	raygui/src/raygui.h
 	src/game/game_object.h
 	src/game/game_object.cpp
+	src/gui/filepicker.h
+	src/gui/filepicker.cpp
+	rlImGui/rlImGui.cpp
+	rlImGui/rlImGui.h
 )
 target_link_libraries(Moiras PRIVATE raylib)
+target_link_libraries(Moiras PRIVATE imgui)

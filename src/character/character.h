@@ -2,7 +2,6 @@
 #include "../map/map.h"
 #include <raylib.h>
 #include <string>
-
 namespace moiras {
 class Character : public GameObject {
 private:
@@ -35,5 +34,6 @@ public:
   void unloadModel();
   void snapToGround(const Model &ground);
   void handleDroppedModel();
+  void handleFileDialog();
 };
 } // namespace moiras

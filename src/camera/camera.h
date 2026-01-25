@@ -11,16 +11,20 @@ void handleCursor();
 class GameCamera : public GameObject {
 private:
   Ray ray;
-  Camera rcamera;
   int updateMode = 1; // AGGIUNTO: inizializzato a 1 per UpdateCameraPro
 
 public:
   int mode;
+  bool isRotating;
+
+  Camera rcamera;
+  Vector3 rotationPivot = {0, 0, 0};
   Vector3 position;
   Vector3 target;
   Vector3 up;
   float fovy;
   int projection;
+  void draw() override;
 
   GameCamera(Vector3 position, Vector3 target, Vector3 up, float fovy,
              int projection, int mode) {

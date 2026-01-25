@@ -1,11 +1,24 @@
 #pragma once
 #include "../game/game_object.h"
+#include "../navigation/navmesh.h"
 #include "rlgl.h"
 #include <raylib.h>
 #include <string>
 namespace moiras {
 class Map : public GameObject {
 public:
+  void buildNavMesh();
+  void drawNavMeshDebug();
+
+NavMesh navMesh;
+bool navMeshBuilt = false;
+bool showNavMeshDebug = false;
+
+// Pathfinding debug - AGGIUNGI QUESTE
+bool showPath = false;
+Vector3 pathStart = {0, 0, 0};
+Vector3 pathEnd = {10, 0, 10};
+std::vector<Vector3> debugPath;
   Shader seaShaderLoaded;
   float hiddenTimeCounter = 0;
   Image perlinNoiseImage;
@@ -37,15 +50,12 @@ public:
   ~Map();
   void draw() override;
   void loadSeaShader();
-  void addSea() {
-    seaMesh = GenMeshPlane(5000, 5000, 50, 50);
-    seaModel = LoadModelFromMesh(seaMesh);
-    seaModel.materials[0].shader = seaShaderLoaded;
-  }
   void setFog();
+  void addSea();
   void loadSkybox(const std::string &texturePath);
   void drawSkybox(Vector3 cameraPosition);
   void update() override;
+  void gui() override;
 };
 std::unique_ptr<Map> mapFromHeightmap(const std::string &filename, float width,
                                       float height, float lenght);

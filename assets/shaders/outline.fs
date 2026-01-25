@@ -1,65 +1,58 @@
 #version 330
 
-// Input vertex attributes (from vertex shader)
 in vec2 fragTexCoord;
-in vec4 fragColor;
-
-// Input uniform values
 uniform sampler2D texture0;
-uniform vec4 colDiffuse;
 uniform vec2 resolution;
 
-// Output fragment color
+// Nuovi parametri per il controllo fine
+uniform float outlineThickness = 1.0; 
+uniform float outlineThreshold = 0.2;
+uniform float outlineSoftness = 0.05; // Per bordi meno "pixelosi"
+
 out vec4 finalColor;
+
+// Funzione per calcolare la luminanza
+float getLuma(vec2 uv) {
+    vec3 col = texture(texture0, uv).rgb;
+    return dot(col, vec3(0.299, 0.587, 0.114));
+}
 
 void main()
 {
-    vec2 texelSize = 1.0 / resolution;
+    vec2 t = outlineThickness / resolution;
+    vec2 uv = fragTexCoord;
+
+    // Campionamento 3x3 (Matrice di Sobel)
+    // [tl] [tc] [tr]
+    // [ml] [cc] [mr]
+    // [bl] [bc] [br]
     
-    // Sample the center pixel
-    vec4 center = texture(texture0, fragTexCoord);
+    float tl = getLuma(uv + vec2(-t.x,  t.y));
+    float tc = getLuma(uv + vec2( 0.0,  t.y));
+    float tr = getLuma(uv + vec2( t.x,  t.y));
     
-    // Sobel operator kernels
-    float sobelX[9];
-    sobelX[0] = -1.0; sobelX[1] = 0.0; sobelX[2] = 1.0;
-    sobelX[3] = -2.0; sobelX[4] = 0.0; sobelX[5] = 2.0;
-    sobelX[6] = -1.0; sobelX[7] = 0.0; sobelX[8] = 1.0;
+    float ml = getLuma(uv + vec2(-t.x,  0.0));
+    float mr = getLuma(uv + vec2( t.x,  0.0));
     
-    float sobelY[9];
-    sobelY[0] = -1.0; sobelY[1] = -2.0; sobelY[2] = -1.0;
-    sobelY[3] =  0.0; sobelY[4] =  0.0; sobelY[5] =  0.0;
-    sobelY[6] =  1.0; sobelY[7] =  2.0; sobelY[8] =  1.0;
+    float bl = getLuma(uv + vec2(-t.x, -t.y));
+    float bc = getLuma(uv + vec2( 0.0, -t.y));
+    float br = getLuma(uv + vec2( t.x, -t.y));
+
+    // Operatori di Sobel
+    float edgeH = tl + (2.0 * ml) + bl - (tr + (2.0 * mr) + br);
+    float edgeV = tl + (2.0 * tc) + tr - (bl + (2.0 * bc) + br);
     
-    // Sample neighboring pixels
-    vec3 samples[9];
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            vec2 offset = vec2(float(j - 1), float(i - 1)) * texelSize;
-            samples[i * 3 + j] = texture(texture0, fragTexCoord + offset).rgb;
-        }
-    }
+    // Magnitudine dell'intensità del bordo
+    float edge = sqrt(edgeH * edgeH + edgeV * edgeV);
+
+    // Invece di step(), usiamo smoothstep per ammorbidire l'outline
+    float edgeMask = smoothstep(outlineThreshold, outlineThreshold + outlineSoftness, edge);
+
+    vec4 center = texture(texture0, uv);
+    vec3 outlineColor = vec3(0.0); // Nero
     
-    // Calculate gradients
-    vec3 gradX = vec3(0.0);
-    vec3 gradY = vec3(0.0);
-    
-    for (int i = 0; i < 9; i++) {
-        gradX += samples[i] * sobelX[i];
-        gradY += samples[i] * sobelY[i];
-    }
-    
-    // Calculate edge magnitude
-    float edgeMagnitude = length(vec2(length(gradX), length(gradY)));
-    
-    // Threshold for edge detection
-    float threshold = 0.5;
-    float edge = step(threshold, edgeMagnitude);
-    
-    // Outline color (black)
-    vec3 outlineColor = vec3(0.0);
-    
-    // Mix original color with outline
-    vec3 finalRGB = mix(center.rgb, outlineColor, edge);
+    // Mix finale
+    vec3 finalRGB = mix(center.rgb, outlineColor, edgeMask);
     
     finalColor = vec4(finalRGB, center.a);
 }

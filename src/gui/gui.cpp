@@ -1,14 +1,13 @@
 #include "gui.h"
+#include "../lights/lightmanager.h"
+#include "asset_spawner.h"
 #include "sidebar.h"
 #include <imgui.h>
-#include "asset_spawner.h"
-
 namespace moiras {
 
 Gui::~Gui() {}
 
 Gui::Gui() {
-
   auto sidebar = std::make_unique<Sidebar>();
   addChild(std::move(sidebar));
   auto asset_spawner = std::make_unique<AssetSpawner>();

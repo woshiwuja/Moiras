@@ -1,8 +1,9 @@
 #include "map.h"
+#include "rlgl.h"
 #include "../models/models.h"
+#include <imgui.h>
 #include <raylib.h>
 #include <raymath.h>
-#define RLIGHTS_IMPLEMENTATION
 
 namespace moiras {
 
@@ -72,6 +73,9 @@ void Map::draw() {
   BeginShaderMode(seaShaderLoaded);
   DrawModel(seaModel, position, 1.0f, WHITE);
   EndShaderMode();
+  if (showNavMeshDebug && navMeshBuilt) {
+    navMesh.drawDebug();
+  };
 }
 
 std::unique_ptr<Map> mapFromHeightmap(const std::string &filename, float width,
@@ -122,5 +126,79 @@ void Map::update() {
   SetShaderValue(seaShaderLoaded, GetShaderLocation(seaShaderLoaded, "time"),
                  &hiddenTimeCounter, SHADER_UNIFORM_FLOAT);
 };
+
+void Map::buildNavMesh() {
+    if (model.meshCount > 0) {
+        BoundingBox bounds = GetMeshBoundingBox(model.meshes[0]);
+        float mapWidth = bounds.max.x - bounds.min.x;
+        float mapLength = bounds.max.z - bounds.min.z;
+
+        TraceLog(LOG_INFO, "Map size: %.1f x %.1f", mapWidth, mapLength);
+
+        float maxGridSize = 500.0f;
+        float suggestedCellSize = fmaxf(mapWidth, mapLength) / maxGridSize;
+
+        navMesh.m_cellSize = fmaxf(0.5f, suggestedCellSize);
+        navMesh.m_cellHeight = navMesh.m_cellSize * 0.5f;
+
+        TraceLog(LOG_INFO, "Using cellSize: %.2f", navMesh.m_cellSize);
+
+        // Passa la trasformazione del modello!
+        navMeshBuilt = navMesh.build(model.meshes[0], model.transform);
+    }
+}
+
+void Map::drawNavMeshDebug() {
+  if (navMeshBuilt) {
+    navMesh.drawDebug();
+  }
+}
+void Map::gui() {
+    ImGui::PushID(this);
+    
+    if (ImGui::CollapsingHeader("Map")) {
+        ImGui::Text("Meshes: %d", model.meshCount);
+        ImGui::Text("Materials: %d", model.materialCount);
+        
+        ImGui::Separator();
+        ImGui::Text("NavMesh");
+        
+        if (navMeshBuilt) {
+            ImGui::TextColored(ImVec4(0, 1, 0, 1), "Status: Ready");
+            ImGui::Checkbox("Show Debug", &showNavMeshDebug);
+        } else {
+            ImGui::TextColored(ImVec4(1, 0, 0, 1), "Status: Not Built");
+            
+            if (ImGui::Button("Build NavMesh")) {
+                buildNavMesh();
+            }
+        }
+        
+        ImGui::Separator();
+        ImGui::Text("NavMesh Settings");
+        ImGui::SliderFloat("Cell Size", &navMesh.m_cellSize, 1.0f, 20.0f);
+        ImGui::SliderFloat("Cell Height", &navMesh.m_cellHeight, 0.5f, 10.0f);
+        ImGui::SliderFloat("Agent Radius", &navMesh.m_agentRadius, 0.5f, 5.0f);
+        ImGui::SliderFloat("Agent Height", &navMesh.m_agentHeight, 1.0f, 10.0f);
+        ImGui::SliderFloat("Max Climb", &navMesh.m_agentMaxClimb, 0.5f, 5.0f);
+        ImGui::SliderFloat("Max Slope", &navMesh.m_agentMaxSlope, 15.0f, 75.0f);
+ImGui::Spacing();
+if (ImGui::Button("Rebuild NavMesh")) {
+    double startTime = GetTime();
+    navMeshBuilt = false;
+    buildNavMesh();
+    double elapsed = GetTime() - startTime;
+    TraceLog(LOG_INFO, "NavMesh rebuilt in %.2f seconds", elapsed);
+}
+    }
+    
+    ImGui::PopID();
+};
+
+  void Map::addSea() {
+    seaMesh = GenMeshPlane(5000, 5000, 50, 50);
+    seaModel = LoadModelFromMesh(seaMesh);
+    seaModel.materials[0].shader = seaShaderLoaded;
+  }
 
 } // namespace moiras

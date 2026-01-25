@@ -5,8 +5,6 @@
 namespace moiras {
 class Character : public GameObject {
 private:
-  Quaternion quat_rotation;
-  
 public:
   int health;
   std::string name;
@@ -14,19 +12,19 @@ public:
   bool isVisible = true;
   float scale;
   Model model;
-  
+  Quaternion quat_rotation;
   Character();
   Character(Model *);
   ~Character(); // AGGIUNGI distruttore
-  
+
   // AGGIUNGI move constructor e assignment
-  Character(Character&& other) noexcept;
-  Character& operator=(Character&& other) noexcept;
-  
+  Character(Character &&other) noexcept;
+  Character &operator=(Character &&other) noexcept;
+
   // DISABILITA copy constructor e assignment
-  Character(const Character&) = delete;
-  Character& operator=(const Character&) = delete;
-  
+  Character(const Character &) = delete;
+  Character &operator=(const Character &) = delete;
+
   void update() override;
   virtual void draw() override;
   void gui() override;

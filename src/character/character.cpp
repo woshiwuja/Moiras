@@ -178,7 +178,4 @@ void Character::snapToGround(const Model &ground) {
   }
 }
 
-void Character::gui() {
-  DrawText(TextFormat("Name: %s", name.c_str()), 900, 300, 24, BLUE);
-  GuiSlider(Rectangle{100, 300, 200, 60}, "-", "+", &scale, 0.1, 100);
-}
+void Character::gui() {}

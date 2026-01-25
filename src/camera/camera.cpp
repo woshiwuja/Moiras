@@ -47,7 +47,7 @@ void GameCamera::cameraControl() {
   // Scale pan speed based on distance from target
   float basePanSpeed = 10.0f;
   float minDistance = 5.0f;
-  float maxDistance = 50.0f;
+  float maxDistance = 500.0f;
   float speedMultiplier = currentDistance / minDistance; // Faster when zoomed out
   float panSpeed = basePanSpeed * speedMultiplier * dt;
   
@@ -116,7 +116,7 @@ void GameCamera::cameraControl() {
     float distance = Vector3Length(offset);
     
     float minDistance = 5.0f;
-    float maxDistance = 50.0f;
+    float maxDistance = 500.0f;
     
     if (distance < minDistance) {
       rcamera.position = Vector3Add(rcamera.target, Vector3Scale(Vector3Normalize(offset), minDistance));

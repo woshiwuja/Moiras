@@ -6,12 +6,16 @@
 
 namespace moiras {
 
-Map::Map() : width(0), height(0), length(0), model{}, mesh{}, texture{} {}
+Map::Map() : width(0), height(0), length(0), model{}, mesh{}, texture{} {
+  name = "Map";
+}
 
 Map::Map(float width_, float height_, float length_, Model model_, Mesh mesh_,
          Texture texture_)
     : width(width_), height(height_), length(length_), model(model_),
-      mesh(mesh_), texture(texture_) {}
+      mesh(mesh_), texture(texture_) {
+  name = "Map";
+}
 
 Map::~Map() {
   if (model.meshCount > 0) {
@@ -32,12 +36,13 @@ Map::Map(Map &&other) noexcept
     : GameObject(std::move(other)), width(other.width), height(other.height),
       length(other.length), model(other.model), mesh(other.mesh),
       texture(other.texture) {
+  name = "Map";
   other.model = {};
   other.mesh = {};
   other.texture = {};
 }
 
-Map::Map(Model model_) : model(model_) {}
+Map::Map(Model model_) : model(model_) { name = "Map"; }
 Map &Map::operator=(Map &&other) noexcept {
   if (this != &other) {
     if (model.meshCount > 0)
@@ -57,6 +62,7 @@ Map &Map::operator=(Map &&other) noexcept {
     other.model = {};
     other.mesh = {};
     other.texture = {};
+    name = other.name;
   }
   return *this;
 }
@@ -64,7 +70,7 @@ Map &Map::operator=(Map &&other) noexcept {
 void Map::draw() {
   DrawModel(model, position, 1.0f, WHITE);
   BeginShaderMode(seaShaderLoaded);
-  DrawModel(seaModel, position , 1.0f, WHITE);
+  DrawModel(seaModel, position, 1.0f, WHITE);
   EndShaderMode();
 }
 

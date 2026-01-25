@@ -1,10 +1,14 @@
-#include "../../raygui/src/raygui.h"
+#pragma once
+
 #include "../game/game_object.h"
+#include "imgui.h"
 namespace moiras {
-class Gui : GameObject {
+class Gui : public GameObject {
+private:
+  ImGuiIO io;
+
 public:
+  ~Gui();
   Gui();
-  virtual void update() override;
-  virtual void draw() override;
 };
 } // namespace moiras

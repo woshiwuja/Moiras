@@ -1,7 +1,7 @@
 #include "game.h"
 #include "../camera/camera.h"
 #include "../character/character.h"
-#include "../gui/filepicker.h"
+#include "../gui/gui.h"
 #include "imgui.h"
 #include <memory>
 #include <raylib.h>
@@ -11,29 +11,35 @@ void Game::setup() {
   // Create main camera
   auto mainCamera = std::make_unique<GameCamera>("MainCamera");
   auto *cameraPtr = mainCamera.get();
-
-  rlImGuiSetup(true);
+  renderTarget = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
+  rlImGuiSetup(false);
   // Create map
   std::unique_ptr<Map> map =
       // moiras::mapFromHeightmap("../assets/heightmap.png", 1000, 50, 1000);
       moiras::mapFromModel("../assets/map.glb");
+
+  SetTextureFilter(map->model.materials[0].maps->texture,
+                   TEXTURE_FILTER_BILINEAR);
   map->seaShaderFragment = ("../assets/shaders/sea_shader.fs");
   map->seaShaderVertex = ("../assets/shaders/sea_shader.vs");
   map->loadSeaShader();
   map->addSea();
 
-  // Create initial character with model
   auto character = std::make_unique<Character>();
-  auto sidebar = std::make_unique<Sidebar>();
   character->loadModel("../assets/knight_artorias_statue.glb");
   character->position = {0, 0, 0};
-  // Snap to ground
   character->snapToGround(map->model);
-  // Add everything to root
+
+  auto gui = std::make_unique<Gui>();
   root.addChild(std::move(mainCamera));
   root.addChild(std::move(map));
   root.addChild(std::move(character));
-  root.addChild(std::move(sidebar));
+  root.addChild(std::move(gui));
+  rlSetClipPlanes(0.5, 50000);
+  outlineShader = LoadShader(0, "../assets/shaders/outline.fs");
+  float resolution[2] = {(float)GetScreenWidth(), (float)GetScreenHeight()};
+  int resolutionLoc = GetShaderLocation(outlineShader, "resolution");
+  SetShaderValue(outlineShader, resolutionLoc, resolution, SHADER_UNIFORM_VEC2);
 }
 
 void Game::loop(Window window) {
@@ -41,12 +47,12 @@ void Game::loop(Window window) {
   {
     root.update();
     auto camera = root.getChildOfType<GameCamera>();
-    auto mainchar = root.getChildOfType<Character>();
     auto map = root.getChildOfType<Map>();
-    mainchar->name = "lolol";
-    mainchar->snapToGround(map->model);
-    
-    camera->beginDrawing();
+
+    // Render to texture
+    BeginTextureMode(renderTarget);
+    ClearBackground(RAYWHITE);
+
     camera->beginMode3D();
     root.draw();
     auto ray = camera->getRay();
@@ -72,21 +78,22 @@ void Game::loop(Window window) {
       DrawLine3D(closest.point, normalEnd, RED);
     }
     camera->endMode3D();
-    
-    // ImGui calls AFTER endMode3D but BEFORE endDrawing
+    EndTextureMode();
+    camera->beginDrawing();
+
+    BeginShaderMode(outlineShader);
+    DrawTextureRec(renderTarget.texture,
+                   (Rectangle){0, 0, (float)renderTarget.texture.width,
+                               (float)-renderTarget.texture.height},
+                   (Vector2){0, 0}, WHITE);
+    EndShaderMode();
+
     rlImGuiBegin();
-    
-    root.gui(); // This will call Sidebar::gui()
-    
-    bool open = true;
-    ImGui::ShowDemoWindow(&open);
-    if (ImGui::Begin("Test Window", &open)) {
-      ImGui::TextUnformatted(ICON_FA_JEDI);
-    }
-    ImGui::End();
-    
+    ImGui::ShowDemoWindow();
+    root.gui();
+
     rlImGuiEnd();
-    
+
     camera->endDrawing();
   }
 }

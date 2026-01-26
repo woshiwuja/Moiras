@@ -11,4 +11,3 @@ void UpdateModelVertsToCurrentBones(Model model);
 void UpdateModelAnimationWithBones(Model model, ModelAnimation anim, int frame);
 
 } // namespace moiras
-//

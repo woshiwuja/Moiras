@@ -67,6 +67,11 @@ void GameCamera::cameraControl() {
   rcamera.position = Vector3Add(rcamera.position, movement);
   rcamera.target = Vector3Add(rcamera.target, movement);
 
+  // Aggiorna anche il pivot di rotazione se stiamo ruotando
+  if (isRotating)
+  {
+    rotationPivot = Vector3Add(rotationPivot, movement);
+  }
   // Middle mouse button rotation around target
   if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
     // Al primo frame del click, trova il nuovo target al centro dello schermo
@@ -138,35 +143,47 @@ void GameCamera::cameraControl() {
 
   // Mouse wheel zoom (move camera closer/farther from target)
   float wheel = GetMouseWheelMove();
-  if (fabsf(wheel) > 0.01f) {
+  if (fabsf(wheel) > 0.01f)
+  {
     Vector3 zoomTarget;
 
-    // Solo quando zoomiamo IN, usiamo il raycast verso la mesh
-    if (wheel > 0) {
-      Ray mouseRay = GetScreenToWorldRay(GetMousePosition(), rcamera);
+    // Usa sempre il centro dello schermo per lo zoom
+    Vector2 screenCenter = {GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
+    Ray centerRay = GetScreenToWorldRay(screenCenter, rcamera);
 
+    // Solo quando zoomiamo IN, usiamo il raycast verso la mesh
+    if (wheel > 0)
+    {
       RayCollision meshHit = {0};
       meshHit.hit = false;
       meshHit.distance = std::numeric_limits<float>::max();
 
       auto mapObj = getParent()->getChildOfType<Map>();
-      if (mapObj) {
+      if (mapObj)
+      {
         Model model = mapObj->model;
-        for (int m = 0; m < model.meshCount; m++) {
+        for (int m = 0; m < model.meshCount; m++)
+        {
           auto hitInfo =
-              GetRayCollisionMesh(mouseRay, model.meshes[m], model.transform);
-          if (hitInfo.hit && hitInfo.distance < meshHit.distance) {
+              GetRayCollisionMesh(centerRay, model.meshes[m], model.transform);
+          if (hitInfo.hit && hitInfo.distance < meshHit.distance)
+          {
             meshHit = hitInfo;
           }
         }
       }
 
-      if (meshHit.hit) {
+      if (meshHit.hit)
+      {
         zoomTarget = meshHit.point;
-      } else {
+      }
+      else
+      {
         zoomTarget = rcamera.target;
       }
-    } else {
+    }
+    else
+    {
       // Zoom OUT: usa sempre il target corrente della camera
       zoomTarget = rcamera.target;
     }

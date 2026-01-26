@@ -5,29 +5,31 @@
 #include "imgui.h"
 #include <raylib.h>
 
-namespace moiras {
+namespace moiras
+{
 
-class Sidebar : public GameObject {
-public:
-    Sidebar();
-    
-    void update() override;
-    void gui() override;
-    
-    // Puntatore al light manager (settato dal Game)
-    LightManager* lightManager = nullptr;
-    
-    bool showImGuiDemo = false;
-    bool showStyleEditor = false;
+    class Sidebar : public GameObject
+    {
+    public:
+        Sidebar();
 
-private:
-    float sidebarWidth;
-    int currentTab;
-    
-    void drawSceneTab(GameObject* root);
-    void drawLightingTab();
-    void drawSettingsTab();
-    void drawGameObjectTree(GameObject* obj);
-};
+        void update() override;
+        void gui() override;
+
+        // Puntatore al light manager (settato dal Game)
+        LightManager *lightManager = nullptr;
+
+        bool showImGuiDemo = false;
+        bool showStyleEditor = false;
+
+    private:
+        float sidebarWidth;
+        int currentTab;
+        bool isOpen;
+        void drawSceneTab(GameObject *root);
+        void drawLightingTab();
+        void drawSettingsTab();
+        void drawGameObjectTree(GameObject *obj);
+    };
 
 } // namespace moiras

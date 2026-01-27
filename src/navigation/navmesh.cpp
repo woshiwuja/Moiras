@@ -52,12 +52,12 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
     cfg.walkableClimb = (int)floorf(m_agentMaxClimb / cfg.ch);
     cfg.walkableRadius = (int)ceilf(m_agentRadius / cfg.cs);
     cfg.maxEdgeLen = (int)(12.0f / cfg.cs);
-    cfg.maxSimplificationError = 2.0f;           // Era 1.3f - MOLTA tolleranza per ridurre poligoni
-    cfg.minRegionArea = (int)rcSqr(20.0f);      // Era 8.0f (64) - ora 400 per filtrare aggressivamente
-    cfg.mergeRegionArea = (int)rcSqr(50.0f);    // Era 20.0f (400) - ora 2500 per merge aggressivo
+    cfg.maxSimplificationError = m_maxSimplificationError;
+    cfg.minRegionArea = (int)rcSqr(m_minRegionArea);
+    cfg.mergeRegionArea = (int)rcSqr(m_mergeRegionArea);
     cfg.maxVertsPerPoly = 6;
     cfg.detailSampleDist = cfg.cs * 6.0f;
-    cfg.detailSampleMaxError = cfg.ch * 2.0f;    // Era 1.0f - MOLTA tolleranza
+    cfg.detailSampleMaxError = cfg.ch * 1.0f;
 
     // 2. Calcolo Bounding Box
     float bmin[3], bmax[3];
@@ -75,6 +75,8 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
     TraceLog(LOG_INFO, "NavMesh: Cell size: %.2f, Cell height: %.2f", cfg.cs, cfg.ch);
     TraceLog(LOG_INFO, "NavMesh: Agent - Height: %.2f, Radius: %.2f, MaxClimb: %.2f, MaxSlope: %.2f°",
              m_agentHeight, m_agentRadius, m_agentMaxClimb, m_agentMaxSlope);
+    TraceLog(LOG_INFO, "NavMesh: Filtering - MinRegion: %.0f² (=%d cells), MergeRegion: %.0f² (=%d cells), SimplificationError: %.2f",
+             m_minRegionArea, cfg.minRegionArea, m_mergeRegionArea, cfg.mergeRegionArea, m_maxSimplificationError);
 
     // 3. Conversione Indici
     int triCount = mesh.triangleCount;

@@ -158,17 +158,52 @@ void Map::buildNavMesh() {
         navMesh.m_cellSize = fmaxf(0.3f, fminf(20.0f, suggestedCellSize));
         navMesh.m_cellHeight = fmaxf(0.3f, navMesh.m_cellSize * 0.4f);  // Ridotto ratio per efficienza
 
-        // Per mappe grandi, parametri più aggressivi per ridurre poligoni
-        if (mapSize >= 3000.0f) {
-            // Mappe MOLTO grandi (4000+)
-            navMesh.m_agentRadius = 2.0f;      // Radius grande per ridurre dettaglio
-            navMesh.m_agentMaxClimb = 1.5f;
-            navMesh.m_agentMaxSlope = 35.0f;   // Molto restrittivo
-        } else if (mapSize >= 2000.0f) {
+        // PARAMETRI ADATTIVI in base alla dimensione mappa
+        if (mapSize < 500.0f) {
+            // Mappe MOLTO piccole (< 500): parametri conservativi
+            navMesh.m_agentRadius = 0.6f;
+            navMesh.m_agentMaxClimb = 0.9f;
+            navMesh.m_agentMaxSlope = 45.0f;    // Permette pendenze fino a 45°
+            navMesh.m_minRegionArea = 8.0f;     // Area minima PICCOLA (64 cells)
+            navMesh.m_mergeRegionArea = 20.0f;  // Merge conservativo (400 cells)
+            navMesh.m_maxSimplificationError = 1.3f;  // Bassa tolleranza per dettaglio
+            TraceLog(LOG_INFO, "NavMesh: Using SMALL map parameters (< 500)");
+        } else if (mapSize < 1000.0f) {
+            // Mappe piccole (500-1000)
+            navMesh.m_agentRadius = 0.8f;
+            navMesh.m_agentMaxClimb = 1.0f;
+            navMesh.m_agentMaxSlope = 45.0f;
+            navMesh.m_minRegionArea = 10.0f;    // 100 cells
+            navMesh.m_mergeRegionArea = 25.0f;  // 625 cells
+            navMesh.m_maxSimplificationError = 1.4f;
+            TraceLog(LOG_INFO, "NavMesh: Using SMALL map parameters (500-1000)");
+        } else if (mapSize < 2000.0f) {
+            // Mappe medie (1000-2000)
+            navMesh.m_agentRadius = 1.0f;
+            navMesh.m_agentMaxClimb = 1.0f;
+            navMesh.m_agentMaxSlope = 42.0f;
+            navMesh.m_minRegionArea = 12.0f;    // 144 cells
+            navMesh.m_mergeRegionArea = 30.0f;  // 900 cells
+            navMesh.m_maxSimplificationError = 1.5f;
+            TraceLog(LOG_INFO, "NavMesh: Using MEDIUM map parameters (1000-2000)");
+        } else if (mapSize < 3000.0f) {
             // Mappe grandi (2000-3000)
             navMesh.m_agentRadius = 1.5f;
             navMesh.m_agentMaxClimb = 1.2f;
             navMesh.m_agentMaxSlope = 40.0f;
+            navMesh.m_minRegionArea = 15.0f;    // 225 cells
+            navMesh.m_mergeRegionArea = 35.0f;  // 1225 cells
+            navMesh.m_maxSimplificationError = 1.7f;
+            TraceLog(LOG_INFO, "NavMesh: Using LARGE map parameters (2000-3000)");
+        } else {
+            // Mappe MOLTO grandi (4000+)
+            navMesh.m_agentRadius = 2.0f;
+            navMesh.m_agentMaxClimb = 1.5f;
+            navMesh.m_agentMaxSlope = 35.0f;
+            navMesh.m_minRegionArea = 20.0f;    // 400 cells - aggressivo
+            navMesh.m_mergeRegionArea = 50.0f;  // 2500 cells - molto aggressivo
+            navMesh.m_maxSimplificationError = 2.0f;
+            TraceLog(LOG_INFO, "NavMesh: Using HUGE map parameters (> 3000)");
         }
 
         float estimatedGridWidth = mapWidth / navMesh.m_cellSize;

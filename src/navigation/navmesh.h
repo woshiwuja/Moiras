@@ -33,6 +33,11 @@ public:
   float m_agentMaxClimb = 1.0f;      // 1 metro di salto
   float m_agentMaxSlope = 40.0f;     // Pendenze camminabili (40°)
 
+  // Parametri di filtraggio regioni (adattati per dimensione mappa)
+  float m_minRegionArea = 8.0f;      // Minima area regione (default conservativo)
+  float m_mergeRegionArea = 20.0f;   // Area per merge regioni
+  float m_maxSimplificationError = 1.3f;  // Tolleranza semplificazione
+
 
 private:
   rcContext *m_ctx;

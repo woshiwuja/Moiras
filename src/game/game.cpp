@@ -133,9 +133,9 @@ namespace moiras
     // Crea il player character
     auto player = std::make_unique<Character>();
     player->name = "Player";
-    player->loadModel(modelManager, "../assets/elf.glb");
+    player->loadModel(modelManager, "../assets/robot2.glb");
     player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
-    player->scale = 5.0f;
+    player->scale = 1.0f;
 
     // Salva il puntatore PRIMA del move
     Character *playerPtr = player.get();

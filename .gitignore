@@ -3,4 +3,12 @@ CMakeFiles/
 CMakeCache.txt
 .vscode/launch.json
 rlImGui
-.cache/
+.cache/# ImGui - only core files needed, ignore examples/docs/backends
+imgui/.github/
+imgui/backends/
+imgui/docs/
+imgui/examples/
+imgui/misc/
+imgui/.editorconfig
+imgui/.gitattributes
+imgui/.gitignore

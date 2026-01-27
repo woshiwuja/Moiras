@@ -167,7 +167,7 @@ void Character::draw() {
 
         // Calcola la matrice di trasformazione
         Matrix matScale = MatrixScale(scale, scale, scale);
-        Matrix matRotation = MatrixRotate(axis, angle * DEG2RAD);
+        Matrix matRotation = MatrixRotate(axis, angle);  // angle is already in radians from QuaternionToAxisAngle
         Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
 
         Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);

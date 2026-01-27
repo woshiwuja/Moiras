@@ -100,7 +100,7 @@ bool CharacterController::raycastToNavMesh(GameCamera* camera, Vector3& hitPoint
     // Ottiene il modello della mappa dal parent della camera
     auto mapObj = camera->getParent()->getChildOfType<Map>();
     if (mapObj) {
-        Model model = mapObj->model;
+        const Model& model = mapObj->model;  // Reference to avoid VRAM copy
 
         // Testa il ray contro tutte le mesh del modello
         for (int m = 0; m < model.meshCount; m++) {

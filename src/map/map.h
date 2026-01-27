@@ -14,8 +14,8 @@ NavMesh navMesh;
 bool navMeshBuilt = false;
 bool showNavMeshDebug = false;
 
-// Pathfinding debug - AGGIUNGI QUESTE
-bool showPath = false;
+// Pathfinding debug
+bool showPath = true;
 Vector3 pathStart = {0, 0, 0};
 Vector3 pathEnd = {10, 0, 10};
 std::vector<Vector3> debugPath;

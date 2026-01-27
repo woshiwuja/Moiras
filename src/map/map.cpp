@@ -137,28 +137,38 @@ void Map::buildNavMesh() {
         TraceLog(LOG_INFO, "Map size: %.1f x %.1f (max: %.1f)", mapWidth, mapLength, mapSize);
 
         // Calcolo cellSize per evitare overflow di Detour
-        // Limite pratico: max ~1200x1200 grid per single-tile navmesh (1.4M cells)
+        // Limite SICURO: max 500x500 grid (250k cells) per evitare errori
         float targetGridSize;
 
-        if (mapSize < 1000.0f) {
-            targetGridSize = 1000.0f;  // Mappe piccole: alta risoluzione
+        if (mapSize < 500.0f) {
+            targetGridSize = 500.0f;   // Mappe molto piccole: alta risoluzione
+        } else if (mapSize < 1000.0f) {
+            targetGridSize = 800.0f;   // Mappe piccole
         } else if (mapSize < 2000.0f) {
-            targetGridSize = 1200.0f;  // Mappe medie
+            targetGridSize = 600.0f;   // Mappe medie
+        } else if (mapSize < 3000.0f) {
+            targetGridSize = 500.0f;   // Mappe grandi
         } else {
-            targetGridSize = 800.0f;   // Mappe grandi: BASSA risoluzione per evitare overflow
+            targetGridSize = 400.0f;   // Mappe MOLTO grandi (4000+): super bassa risoluzione
         }
 
         float suggestedCellSize = mapSize / targetGridSize;
 
-        // Clamp tra 0.3 e 10.0
-        navMesh.m_cellSize = fmaxf(0.3f, fminf(10.0f, suggestedCellSize));
-        navMesh.m_cellHeight = fmaxf(0.3f, navMesh.m_cellSize * 0.5f);
+        // Clamp tra 0.3 e 20.0 (aumentato per mappe enormi)
+        navMesh.m_cellSize = fmaxf(0.3f, fminf(20.0f, suggestedCellSize));
+        navMesh.m_cellHeight = fmaxf(0.3f, navMesh.m_cellSize * 0.4f);  // Ridotto ratio per efficienza
 
-        // Per mappe grandi, parametri più aggressivi
-        if (mapSize >= 2000.0f) {
-            navMesh.m_agentRadius = 1.2f;      // Era 0.8, ora più grande
-            navMesh.m_agentMaxClimb = 1.0f;
-            navMesh.m_agentMaxSlope = 40.0f;   // Più restrittivo per ridurre poligoni
+        // Per mappe grandi, parametri più aggressivi per ridurre poligoni
+        if (mapSize >= 3000.0f) {
+            // Mappe MOLTO grandi (4000+)
+            navMesh.m_agentRadius = 2.0f;      // Radius grande per ridurre dettaglio
+            navMesh.m_agentMaxClimb = 1.5f;
+            navMesh.m_agentMaxSlope = 35.0f;   // Molto restrittivo
+        } else if (mapSize >= 2000.0f) {
+            // Mappe grandi (2000-3000)
+            navMesh.m_agentRadius = 1.5f;
+            navMesh.m_agentMaxClimb = 1.2f;
+            navMesh.m_agentMaxSlope = 40.0f;
         }
 
         float estimatedGridWidth = mapWidth / navMesh.m_cellSize;

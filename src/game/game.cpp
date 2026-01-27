@@ -23,7 +23,7 @@ namespace moiras
     rlImGuiSetup(false);
 
     // Create map - USING PYRAMID TEST FOR NAVMESH TESTING
-    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.obj");
+    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.glb");
 
     SetTextureFilter(map->model.materials[0].maps->texture,
                      TEXTURE_FILTER_ANISOTROPIC_8X);

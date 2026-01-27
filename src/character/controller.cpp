@@ -53,23 +53,31 @@ void CharacterController::update(GameCamera* camera) {
 }
 
 void CharacterController::handleMouseClick(GameCamera* camera) {
-    // Click sinistro del mouse per impostare il target
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    // Tasto destro del mouse: tenuto premuto per seguire il cursore
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
         Vector3 hitPoint;
 
         if (raycastToNavMesh(camera, hitPoint)) {
-            TraceLog(LOG_INFO, "CharacterController: Target set at (%.2f, %.2f, %.2f)",
-                     hitPoint.x, hitPoint.y, hitPoint.z);
+            // Aggiorna il target solo se è cambiato significativamente
+            // per evitare ricalcoli continui del path
+            float distanceFromLastTarget = Vector3Distance(hitPoint, m_targetPoint);
 
-            m_targetPoint = hitPoint;
-            m_hasTarget = true;
+            if (!m_hasTarget || distanceFromLastTarget > 1.0f) {
+                TraceLog(LOG_INFO, "CharacterController: Target updated at (%.2f, %.2f, %.2f)",
+                         hitPoint.x, hitPoint.y, hitPoint.z);
 
-            // Calcola il path dalla posizione corrente al target
-            calculatePath(hitPoint);
+                m_targetPoint = hitPoint;
+                m_hasTarget = true;
+
+                // Calcola il path dalla posizione corrente al nuovo target
+                calculatePath(hitPoint);
+            }
         } else {
             TraceLog(LOG_WARNING, "CharacterController: Failed to raycast to navmesh");
         }
     }
+
+    // Quando si rilascia il tasto, il character continua a muoversi verso l'ultimo target
 }
 
 bool CharacterController::raycastToNavMesh(GameCamera* camera, Vector3& hitPoint) {

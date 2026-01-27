@@ -51,6 +51,7 @@ public:
 private:
     Character* m_character;
     NavMesh* m_navMesh;
+    const Model* m_groundModel;  // Modello per snap continuo alla geometria
 
     // Path corrente
     std::vector<Vector3> m_currentPath;

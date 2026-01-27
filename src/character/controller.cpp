@@ -8,6 +8,7 @@ namespace moiras {
 CharacterController::CharacterController(Character* character, NavMesh* navMesh, const Model* groundModel)
     : m_character(character)
     , m_navMesh(navMesh)
+    , m_groundModel(groundModel)
     , m_currentPathIndex(0)
     , m_isMoving(false)
     , m_movementSpeed(5.0f)
@@ -18,8 +19,8 @@ CharacterController::CharacterController(Character* character, NavMesh* navMesh,
     TraceLog(LOG_INFO, "CharacterController: Created for character '%s'", character->name.c_str());
 
     // Snap del character sulla mesh geometrica se disponibile
-    if (m_character && groundModel) {
-        m_character->snapToGround(*groundModel);
+    if (m_character && m_groundModel) {
+        m_character->snapToGround(*m_groundModel);
         TraceLog(LOG_INFO, "CharacterController: Character snapped to ground at (%.2f,%.2f,%.2f)",
                  m_character->position.x, m_character->position.y, m_character->position.z);
     }
@@ -188,6 +189,11 @@ void CharacterController::followPath() {
     Vector3 movement = Vector3Scale(direction, moveDistance);
 
     m_character->position = Vector3Add(m_character->position, movement);
+
+    // Snap continuo alla geometria per seguire pendenze/lati
+    if (m_groundModel) {
+        m_character->snapToGround(*m_groundModel);
+    }
 
     // Calcola la rotazione del character verso la direzione di movimento
     // Usiamo atan2 per calcolare l'angolo di rotazione intorno all'asse Y

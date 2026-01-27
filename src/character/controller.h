@@ -14,7 +14,7 @@ namespace moiras {
  */
 class CharacterController {
 public:
-    CharacterController(Character* character, NavMesh* navMesh);
+    CharacterController(Character* character, NavMesh* navMesh, const Model* groundModel = nullptr);
     ~CharacterController();
 
     /**

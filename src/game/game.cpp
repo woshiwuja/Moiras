@@ -131,7 +131,7 @@ namespace moiras
     // Crea il controller per il player
     if (mapPtr && playerPtr)
     {
-      playerController = std::make_unique<CharacterController>(playerPtr, &mapPtr->navMesh);
+      playerController = std::make_unique<CharacterController>(playerPtr, &mapPtr->navMesh, &mapPtr->model);
       playerController->setMovementSpeed(8.0f);
       TraceLog(LOG_INFO, "Player controller created and initialized");
     }

@@ -5,7 +5,7 @@
 
 namespace moiras {
 
-CharacterController::CharacterController(Character* character, NavMesh* navMesh)
+CharacterController::CharacterController(Character* character, NavMesh* navMesh, const Model* groundModel)
     : m_character(character)
     , m_navMesh(navMesh)
     , m_currentPathIndex(0)
@@ -17,8 +17,14 @@ CharacterController::CharacterController(Character* character, NavMesh* navMesh)
 {
     TraceLog(LOG_INFO, "CharacterController: Created for character '%s'", character->name.c_str());
 
-    // Snap del character sulla navmesh all'inizializzazione
-    if (m_character && m_navMesh) {
+    // Snap del character sulla mesh geometrica se disponibile
+    if (m_character && groundModel) {
+        m_character->snapToGround(*groundModel);
+        TraceLog(LOG_INFO, "CharacterController: Character snapped to ground at (%.2f,%.2f,%.2f)",
+                 m_character->position.x, m_character->position.y, m_character->position.z);
+    }
+    // Altrimenti usa la proiezione sulla navmesh
+    else if (m_character && m_navMesh) {
         Vector3 projectedPos;
         if (m_navMesh->projectPointToNavMesh(m_character->position, projectedPos)) {
             m_character->position = projectedPos;

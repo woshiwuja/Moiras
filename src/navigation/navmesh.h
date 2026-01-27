@@ -18,6 +18,9 @@ public:
   std::vector<Vector3> findPath(Vector3 start, Vector3 end);
   void drawDebug();
 
+  // Proietta un punto sulla navmesh (trova il punto più vicino sulla navmesh)
+  bool projectPointToNavMesh(Vector3 point, Vector3& projectedPoint);
+
   // Parametri configurabili
   float m_cellSize = 0.1f;
   float m_cellHeight = 0.2f;

@@ -16,6 +16,16 @@ CharacterController::CharacterController(Character* character, NavMesh* navMesh)
     , m_waypointThreshold(0.5f)
 {
     TraceLog(LOG_INFO, "CharacterController: Created for character '%s'", character->name.c_str());
+
+    // Snap del character sulla navmesh all'inizializzazione
+    if (m_character && m_navMesh) {
+        Vector3 projectedPos;
+        if (m_navMesh->projectPointToNavMesh(m_character->position, projectedPos)) {
+            m_character->position = projectedPos;
+            TraceLog(LOG_INFO, "CharacterController: Character snapped to navmesh at (%.2f,%.2f,%.2f)",
+                     projectedPos.x, projectedPos.y, projectedPos.z);
+        }
+    }
 }
 
 CharacterController::~CharacterController() {
@@ -88,8 +98,17 @@ bool CharacterController::raycastToNavMesh(GameCamera* camera, Vector3& hitPoint
     }
 
     if (closestHit.hit) {
-        hitPoint = closestHit.point;
-        return true;
+        // Proietta il punto sulla navmesh per assicurarci che sia valido
+        Vector3 projectedPoint;
+        if (m_navMesh && m_navMesh->projectPointToNavMesh(closestHit.point, projectedPoint)) {
+            hitPoint = projectedPoint;
+            return true;
+        } else {
+            // Se non riesce a proiettare, usa comunque il punto del raycast
+            TraceLog(LOG_WARNING, "CharacterController: Could not project hit point to navmesh, using raw point");
+            hitPoint = closestHit.point;
+            return true;
+        }
     }
 
     return false;

@@ -279,7 +279,7 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
 
 std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
     std::vector<Vector3> pathPoints;
-    
+
     if (!m_navMesh || !m_navQuery) {
         TraceLog(LOG_WARNING, "NavMesh: NavMesh not initialized");
         return pathPoints;
@@ -287,7 +287,8 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
 
     float sPos[3] = { start.x, start.y, start.z };
     float ePos[3] = { end.x, end.y, end.z };
-    float extents[3] = { 2.0f, 4.0f, 2.0f };
+    // Aumentati gli extents per trovare poligoni più lontani, specialmente in verticale
+    float extents[3] = { 10.0f, 50.0f, 10.0f };
 
     dtQueryFilter filter;
     filter.setIncludeFlags(0xFFFF);
@@ -295,12 +296,15 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
 
     dtPolyRef startRef, endRef;
     float nearestStart[3], nearestEnd[3];
-    
+
     m_navQuery->findNearestPoly(sPos, extents, &filter, &startRef, nearestStart);
     m_navQuery->findNearestPoly(ePos, extents, &filter, &endRef, nearestEnd);
 
     if (!startRef || !endRef) {
-        TraceLog(LOG_WARNING, "NavMesh: Could not find start or end polygon");
+        TraceLog(LOG_WARNING, "NavMesh: Could not find start or end polygon (start: %.2f,%.2f,%.2f, end: %.2f,%.2f,%.2f)",
+                 start.x, start.y, start.z, end.x, end.y, end.z);
+        TraceLog(LOG_INFO, "NavMesh: Start polygon found: %s, End polygon found: %s",
+                 startRef ? "YES" : "NO", endRef ? "YES" : "NO");
         return pathPoints;
     }
 
@@ -330,6 +334,38 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
     }
 
     return pathPoints;
+}
+
+bool NavMesh::projectPointToNavMesh(Vector3 point, Vector3& projectedPoint) {
+    if (!m_navMesh || !m_navQuery) {
+        TraceLog(LOG_WARNING, "NavMesh: NavMesh not initialized");
+        return false;
+    }
+
+    float pos[3] = { point.x, point.y, point.z };
+    float extents[3] = { 10.0f, 50.0f, 10.0f };
+
+    dtQueryFilter filter;
+    filter.setIncludeFlags(0xFFFF);
+    filter.setExcludeFlags(0);
+
+    dtPolyRef polyRef;
+    float nearestPoint[3];
+
+    dtStatus status = m_navQuery->findNearestPoly(pos, extents, &filter, &polyRef, nearestPoint);
+
+    if (dtStatusSucceed(status) && polyRef) {
+        projectedPoint.x = nearestPoint[0];
+        projectedPoint.y = nearestPoint[1];
+        projectedPoint.z = nearestPoint[2];
+        TraceLog(LOG_INFO, "NavMesh: Point projected from (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
+                 point.x, point.y, point.z, projectedPoint.x, projectedPoint.y, projectedPoint.z);
+        return true;
+    }
+
+    TraceLog(LOG_WARNING, "NavMesh: Could not project point (%.2f,%.2f,%.2f) to navmesh",
+             point.x, point.y, point.z);
+    return false;
 }
 
 void NavMesh::buildDebugMesh() {

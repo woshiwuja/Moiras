@@ -657,12 +657,13 @@ void NavMesh::buildDebugMeshFromNavMesh() {
     };
     int numColors = sizeof(tileColors) / sizeof(tileColors[0]);
 
-    // Itera su tutte le tile della dtNavMesh
-    int maxTiles = m_navMesh->getMaxTiles();
+    // Usa const pointer per accedere al metodo getTile pubblico
+    const dtNavMesh* navMesh = m_navMesh;
+    int maxTiles = navMesh->getMaxTiles();
     int colorIndex = 0;
 
     for (int i = 0; i < maxTiles; i++) {
-        const dtMeshTile* tile = m_navMesh->getTile(i);
+        const dtMeshTile* tile = navMesh->getTile(i);
         if (!tile || !tile->header) continue;
 
         Color tileColor = tileColors[colorIndex % numColors];
@@ -757,7 +758,7 @@ void NavMesh::drawDebug() {
 }
 
 // Header per il file binario navmesh
-static const int NAVMESH_FILE_MAGIC = 'NMSH';
+static const int NAVMESH_FILE_MAGIC = 0x4E4D5348;  // 'NMSH' in hex
 static const int NAVMESH_FILE_VERSION = 1;
 
 bool NavMesh::saveToFile(const std::string& filename) {
@@ -785,12 +786,13 @@ bool NavMesh::saveToFile(const std::string& filename) {
     file.write(reinterpret_cast<const char*>(m_boundsMax), sizeof(float) * 3);
 
     // Scrivi numero di tiles
-    int maxTiles = m_navMesh->getMaxTiles();
+    const dtNavMesh* navMesh = m_navMesh;
+    int maxTiles = navMesh->getMaxTiles();
     int numTiles = 0;
 
     // Conta tiles valide
     for (int i = 0; i < maxTiles; i++) {
-        const dtMeshTile* tile = m_navMesh->getTile(i);
+        const dtMeshTile* tile = navMesh->getTile(i);
         if (tile && tile->header && tile->dataSize > 0) {
             numTiles++;
         }
@@ -800,7 +802,7 @@ bool NavMesh::saveToFile(const std::string& filename) {
 
     // Scrivi ogni tile
     for (int i = 0; i < maxTiles; i++) {
-        const dtMeshTile* tile = m_navMesh->getTile(i);
+        const dtMeshTile* tile = navMesh->getTile(i);
         if (!tile || !tile->header || tile->dataSize <= 0) continue;
 
         // Scrivi tile reference

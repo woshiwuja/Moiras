@@ -96,6 +96,10 @@ add_executable(
     src/navigation/navmesh.h
     src/navigation/navmesh.cpp
     src/gui/sidebar.cpp
+    src/building/structure.h
+    src/building/structure.cpp
+    src/building/structure_builder.h
+    src/building/structure_builder.cpp
     rlImGui/rlImGui.cpp
     rlImGui/rlImGui.h
 )

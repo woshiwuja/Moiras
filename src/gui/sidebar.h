@@ -7,6 +7,7 @@
 
 namespace moiras
 {
+    class StructureBuilder; // Forward declaration
 
     class Sidebar : public GameObject
     {
@@ -19,6 +20,9 @@ namespace moiras
         // Puntatore al light manager (settato dal Game)
         LightManager *lightManager = nullptr;
 
+        // Puntatore al structure builder (settato dal Game)
+        StructureBuilder *structureBuilder = nullptr;
+
         bool showImGuiDemo = false;
         bool showStyleEditor = false;
 
@@ -28,6 +32,7 @@ namespace moiras
         bool isOpen;
         void drawSceneTab(GameObject *root);
         void drawLightingTab();
+        void drawBuildingTab();
         void drawSettingsTab();
         void drawGameObjectTree(GameObject *obj);
     };

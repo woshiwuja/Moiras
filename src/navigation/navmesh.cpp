@@ -169,14 +169,40 @@ bool NavMesh::buildTiled(const Mesh& mesh, Matrix transform) {
     m_tilesX = (m_tilesX < 1) ? 1 : m_tilesX;
     m_tilesZ = (m_tilesZ < 1) ? 1 : m_tilesZ;
 
-    // Aggiorna maxTiles se necessario
+    // Calcola maxTiles e maxPolys come potenze di 2 (richiesto da Detour)
+    // 22 bit totali da dividere tra tiles e polys
     int totalTiles = m_tilesX * m_tilesZ;
-    if (totalTiles > m_maxTiles) {
-        m_maxTiles = totalTiles + 16; // Margine extra
-    }
+
+    // Helper: calcola prossima potenza di 2
+    auto nextPow2 = [](unsigned int v) -> unsigned int {
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v++;
+        return v;
+    };
+
+    // Helper: calcola log2 intero
+    auto ilog2 = [](unsigned int v) -> unsigned int {
+        unsigned int r = 0;
+        while (v >>= 1) r++;
+        return r;
+    };
+
+    int tileBits = ilog2(nextPow2(totalTiles));
+    if (tileBits < 1) tileBits = 1;
+    if (tileBits > 14) tileBits = 14;  // Max 14 bit per tiles
+    int polyBits = 22 - tileBits;
+    m_maxTiles = 1 << tileBits;
+    m_maxPolysPerTile = 1 << polyBits;
 
     TraceLog(LOG_INFO, "NavMesh: Tile size: %.2f, Grid: %d x %d tiles (total: %d)",
              m_tileSize, m_tilesX, m_tilesZ, totalTiles);
+    TraceLog(LOG_INFO, "NavMesh: maxTiles: %d (2^%d), maxPolysPerTile: %d (2^%d)",
+             m_maxTiles, tileBits, m_maxPolysPerTile, polyBits);
 
     // Setup configurazione Recast base
     memset(&m_cfg, 0, sizeof(m_cfg));

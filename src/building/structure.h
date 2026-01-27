@@ -12,6 +12,7 @@ class Structure : public GameObject {
 public:
     ModelInstance modelInstance;
     Vector3 eulerRot;
+    Quaternion rotation;
     float scale;
     bool isPlaced;
     std::string modelPath;

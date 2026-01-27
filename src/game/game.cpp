@@ -118,6 +118,7 @@ namespace moiras
     // Crea il player character
     auto player = std::make_unique<Character>();
     player->name = "Player";
+    player->loadModel("../assets/monster_ue5rig.glb");
     player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
     player->scale = 1.0f;
 

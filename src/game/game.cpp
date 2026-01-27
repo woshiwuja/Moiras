@@ -3,6 +3,7 @@
 #include "../character/character.h"
 #include "../gui/gui.h"
 #include "../gui/sidebar.h"
+#include "../building/structure.h"
 #include "imgui.h"
 #include <memory>
 #include <raylib.h>
@@ -40,6 +41,18 @@ namespace moiras
     {
       sidebar->lightManager = &lightmanager;
       TraceLog(LOG_INFO, "LightManager linked to Sidebar");
+    }
+
+    // Crea il StructureBuilder per il map building
+    auto structureBuilderPtr = std::make_unique<StructureBuilder>();
+    structureBuilder = structureBuilderPtr.get();
+    root.addChild(std::move(structureBuilderPtr));
+
+    // Collega il StructureBuilder alla sidebar
+    if (sidebar)
+    {
+      sidebar->structureBuilder = structureBuilder;
+      TraceLog(LOG_INFO, "StructureBuilder linked to Sidebar");
     }
 
     // Setup clip planes
@@ -135,6 +148,22 @@ namespace moiras
       playerController->setMovementSpeed(8.0f);
       TraceLog(LOG_INFO, "Player controller created and initialized");
     }
+
+    // Configura lo StructureBuilder con le dipendenze
+    auto cameraPtr = root.getChildOfType<GameCamera>();
+    if (structureBuilder && mapPtr)
+    {
+      structureBuilder->setMap(mapPtr);
+      structureBuilder->setNavMesh(&mapPtr->navMesh);
+      if (cameraPtr)
+      {
+        structureBuilder->setCamera(&cameraPtr->rcamera);
+      }
+      TraceLog(LOG_INFO, "StructureBuilder configured with Map and NavMesh");
+    }
+
+    // Imposta lo shader condiviso per le strutture
+    Structure::setSharedShader(lightmanager.getShader());
   }
 
   void Game::loop(Window window)
@@ -146,8 +175,9 @@ namespace moiras
       auto camera = root.getChildOfType<GameCamera>();
       auto map = root.getChildOfType<Map>();
 
-      // Aggiorna il player controller
-      if (playerController && camera)
+      // Aggiorna il player controller (solo se non siamo in building mode)
+      bool inBuildingMode = (structureBuilder && structureBuilder->isBuildingMode());
+      if (playerController && camera && !inBuildingMode)
       {
         playerController->update(camera);
       }

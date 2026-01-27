@@ -3,6 +3,7 @@
 #include "../lights/lightmanager.h"
 #include "../window/window.h"
 #include "../character/controller.h"
+#include "../building/structure_builder.h"
 #include "game_object.h"
 #include <memory>
 #include <raylib.h>
@@ -20,6 +21,9 @@ public:
 
   // Player controller
   std::unique_ptr<CharacterController> playerController;
+
+  // Structure builder per map building
+  StructureBuilder* structureBuilder = nullptr;
 
   Game();
   ~Game();

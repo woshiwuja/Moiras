@@ -1,5 +1,7 @@
 // filepicker.cpp
 #include "sidebar.h"
+#include "../building/structure_builder.h"
+#include "../../rlImGui/rlImGui.h"
 
 using namespace ImGui;
 namespace moiras
@@ -79,8 +81,9 @@ namespace moiras
                     EndTabItem();
                 }
 
-                if (BeginTabItem("Assets"))
+                if (BeginTabItem("Building"))
                 {
+                    drawBuildingTab();
                     EndTabItem();
                 }
 
@@ -128,6 +131,129 @@ namespace moiras
         }
 
         lightManager->gui();
+    }
+
+    void Sidebar::drawBuildingTab()
+    {
+        if (!structureBuilder)
+        {
+            TextColored(ImVec4(1, 0, 0, 1), "StructureBuilder not set!");
+            return;
+        }
+
+        bool buildingMode = structureBuilder->isBuildingMode();
+
+        // Stato corrente
+        if (buildingMode)
+        {
+            TextColored(ImVec4(0, 1, 0, 1), "BUILDING MODE ACTIVE");
+            Separator();
+            Text("Q/E: Rotate");
+            Text("Shift+Scroll: Scale");
+            Text("Left Click: Place");
+            Text("ESC/Right Click: Exit");
+            Separator();
+
+            if (Button("Exit Building Mode", ImVec2(-1, 30)))
+            {
+                structureBuilder->exitBuildingMode();
+            }
+        }
+        else
+        {
+            Text("Select an asset to build:");
+            Separator();
+
+            // Preview dell'asset selezionato
+            Texture2D previewTex = structureBuilder->getPreviewTexture();
+            if (previewTex.id != 0)
+            {
+                float previewSize = sidebarWidth - 40;
+                if (previewSize > 180) previewSize = 180;
+
+                rlImGuiImageRect(&previewTex,
+                               (int)previewSize, (int)(previewSize * 0.75f),
+                               (Rectangle){0, 0, (float)previewTex.width, (float)previewTex.height});
+            }
+            else
+            {
+                // Placeholder grigio
+                ImVec2 cursorPos = GetCursorScreenPos();
+                float previewW = sidebarWidth - 40;
+                if (previewW > 180) previewW = 180;
+                float previewH = previewW * 0.75f;
+
+                GetWindowDrawList()->AddRectFilled(
+                    cursorPos,
+                    ImVec2(cursorPos.x + previewW, cursorPos.y + previewH),
+                    IM_COL32(60, 60, 60, 255)
+                );
+                GetWindowDrawList()->AddRect(
+                    cursorPos,
+                    ImVec2(cursorPos.x + previewW, cursorPos.y + previewH),
+                    IM_COL32(100, 100, 100, 255)
+                );
+
+                ImVec2 textSize = CalcTextSize("No Selection");
+                SetCursorScreenPos(ImVec2(
+                    cursorPos.x + (previewW - textSize.x) * 0.5f,
+                    cursorPos.y + (previewH - textSize.y) * 0.5f
+                ));
+                TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No Selection");
+                SetCursorScreenPos(ImVec2(cursorPos.x, cursorPos.y + previewH + 5));
+            }
+
+            Spacing();
+
+            // Lista asset
+            Text("Available Assets:");
+
+            const auto& assetList = structureBuilder->getAssetList();
+            int selectedIndex = structureBuilder->getSelectedAssetIndex();
+
+            // Lista scrollabile
+            float listHeight = 200.0f;
+            BeginChild("AssetList", ImVec2(0, listHeight), true);
+
+            for (size_t i = 0; i < assetList.size(); i++)
+            {
+                bool isSelected = (selectedIndex == (int)i);
+                if (Selectable(assetList[i].c_str(), isSelected))
+                {
+                    structureBuilder->selectAsset((int)i);
+                }
+            }
+
+            EndChild();
+
+            Spacing();
+
+            // Pulsante refresh
+            if (Button("Refresh List", ImVec2(-1, 0)))
+            {
+                structureBuilder->refreshAssetList();
+            }
+
+            Spacing();
+
+            // Pulsante per entrare in building mode
+            bool canBuild = (selectedIndex >= 0);
+            if (!canBuild)
+            {
+                PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+            }
+
+            if (Button("Start Building", ImVec2(-1, 35)) && canBuild)
+            {
+                structureBuilder->enterBuildingMode();
+            }
+
+            if (!canBuild)
+            {
+                PopStyleVar();
+                TextColored(ImVec4(1, 0.5f, 0, 1), "Select an asset first");
+            }
+        }
     }
 
     void Sidebar::drawSettingsTab()

@@ -23,17 +23,16 @@ namespace moiras
     rlImGuiSetup(false);
 
     // Create map - USING PYRAMID TEST FOR NAVMESH TESTING
-    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/pyramid_test.obj");
+    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.obj");
 
-    // Skip texture filtering and sea shader for test pyramid
-    // SetTextureFilter(map->model.materials[0].maps->texture,
-    //                  TEXTURE_FILTER_ANISOTROPIC_8X);
-    // SetTextureFilter(map->model.materials->maps->texture,
-    //                  TEXTURE_FILTER_ANISOTROPIC_8X);
-    // map->seaShaderFragment = ("../assets/shaders/sea_shader.fs");
-    // map->seaShaderVertex = ("../assets/shaders/sea_shader.vs");
-    // map->loadSeaShader();
-    // map->addSea();
+    SetTextureFilter(map->model.materials[0].maps->texture,
+                     TEXTURE_FILTER_ANISOTROPIC_8X);
+    SetTextureFilter(map->model.materials->maps->texture,
+                     TEXTURE_FILTER_ANISOTROPIC_8X);
+    map->seaShaderFragment = ("../assets/shaders/sea_shader.fs");
+    map->seaShaderVertex = ("../assets/shaders/sea_shader.vs");
+    map->loadSeaShader();
+    map->addSea();
 
     auto gui = std::make_unique<Gui>();
     auto sidebar = gui->getChildOfType<Sidebar>();
@@ -119,11 +118,11 @@ namespace moiras
     // Crea il player character
     auto player = std::make_unique<Character>();
     player->name = "Player";
-    player->position = {0.0f, 10.0f, 0.0f};  // Posizione iniziale
+    player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
     player->scale = 1.0f;
 
     // Salva il puntatore PRIMA del move
-    Character* playerPtr = player.get();
+    Character *playerPtr = player.get();
 
     // Aggiungi il player al root
     root.addChild(std::move(player));

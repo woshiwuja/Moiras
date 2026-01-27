@@ -93,6 +93,8 @@ add_executable(
     src/building/structure.cpp
     src/building/structure_builder.h
     src/building/structure_builder.cpp
+    src/resources/model_manager.h
+    src/resources/model_manager.cpp
     rlImGui/rlImGui.cpp
     rlImGui/rlImGui.h
 )

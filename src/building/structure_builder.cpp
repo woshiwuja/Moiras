@@ -17,6 +17,7 @@ StructureBuilder::StructureBuilder()
       m_map(nullptr),
       m_camera(nullptr),
       m_navMesh(nullptr),
+      m_modelManager(nullptr),
       m_previewModel({0}),
       m_previewModelLoaded(false),
       m_previewPosition({0, 0, 0}),
@@ -52,6 +53,10 @@ void StructureBuilder::setCamera(Camera3D* camera) {
 
 void StructureBuilder::setNavMesh(NavMesh* navMesh) {
     m_navMesh = navMesh;
+}
+
+void StructureBuilder::setModelManager(ModelManager* modelManager) {
+    m_modelManager = modelManager;
 }
 
 void StructureBuilder::enterBuildingMode() {
@@ -145,17 +150,27 @@ void StructureBuilder::draw() {
         applyPreviewShader(m_isValidPlacement);
         m_lastShaderWasValid = m_isValidPlacement;
     }
+// 1. Vettore "Up" standard
+Vector3 up = { 0.0f, 1.0f, 0.0f };
+    Vector3 axis = Vector3CrossProduct(up, m_previewNormal);
+    float dot = Vector3DotProduct(up, m_previewNormal);
+    
+    Quaternion qSurf;
+    if (dot < -0.9999f) qSurf = QuaternionFromAxisAngle({1, 0, 0}, PI);
+    else {
+        qSurf = { axis.x, axis.y, axis.z, 1.0f + dot };
+        qSurf = QuaternionNormalize(qSurf);
+    }
 
-    // Calcola la matrice di trasformazione
+    Quaternion qUser = QuaternionFromAxisAngle({0, 1, 0}, m_previewRotationY);
+    Matrix matRotation = QuaternionToMatrix(QuaternionMultiply(qUser, qSurf));
+    
     Matrix matScale = MatrixScale(m_previewScale, m_previewScale, m_previewScale);
-    Matrix matRotation = MatrixRotateY(m_previewRotationY);
     Matrix matTranslation = MatrixTranslate(m_previewPosition.x, m_previewPosition.y, m_previewPosition.z);
 
     m_previewModel.transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-    // Disegna il modello preview
     DrawModel(m_previewModel, {0, 0, 0}, 1.0f, WHITE);
-
     // Disegna il bounding box
     BoundingBox bounds = GetModelBoundingBox(m_previewModel);
     Vector3 size = {
@@ -173,26 +188,28 @@ void StructureBuilder::draw() {
         boxColor
     );
 
-    GameObject::draw();
+    //GameObject::draw();
 }
 
 void StructureBuilder::gui() {
-    // La GUI viene gestita dalla sidebar, non qui
-    GameObject::gui();
 }
 
 bool StructureBuilder::placeStructure() {
     if (!m_previewModelLoaded || !m_isValidPlacement) return false;
     if (m_selectedAsset < 0 || m_selectedAsset >= (int)m_assetFiles.size()) return false;
+    if (!m_modelManager) {
+        TraceLog(LOG_ERROR, "StructureBuilder: ModelManager not set!");
+        return false;
+    }
 
     // Crea una nuova struttura
     auto structure = std::make_unique<Structure>();
 
     std::string modelPath = "../assets/" + m_assetFiles[m_selectedAsset];
-    structure->loadModel(modelPath);
+    structure->loadModel(*m_modelManager, modelPath);
 
     // Verifica che il modello sia stato caricato correttamente
-    if (structure->model.meshCount == 0) {
+    if (!structure->hasModel()) {
         TraceLog(LOG_ERROR, "Failed to load structure model: %s", modelPath.c_str());
         return false;
     }
@@ -212,17 +229,8 @@ bool StructureBuilder::placeStructure() {
     if (root) {
         root->addChild(std::move(structure));
 
-        // Log info sulla posizione
-        if (m_navMesh) {
-            TileCoord tile = m_navMesh->getTileCoordAt(m_previewPosition);
-            TraceLog(LOG_INFO, "Structure placed at tile (%d, %d)", tile.x, tile.y);
-        }
+    
     }
-
-    TraceLog(LOG_INFO, "Structure placed: %s at (%.2f, %.2f, %.2f)",
-             m_assetFiles[m_selectedAsset].c_str(),
-             m_previewPosition.x, m_previewPosition.y, m_previewPosition.z);
-
     return true;
 }
 
@@ -266,7 +274,6 @@ void StructureBuilder::loadPreviewModel(const std::string& assetPath) {
 
     m_previewModel = LoadModel(assetPath.c_str());
     m_previewModelLoaded = (m_previewModel.meshCount > 0);
-
     if (m_previewModelLoaded) {
         // Applica lo shader immediatamente dopo il caricamento
         m_lastShaderWasValid = true;  // Reset per forzare l'applicazione
@@ -290,11 +297,8 @@ void StructureBuilder::unloadPreviewModel() {
 void StructureBuilder::updatePreviewPosition() {
     if (!m_camera || !m_map) return;
 
-    // Raycast dal mouse verso il terreno
     Ray ray = GetScreenToWorldRay(GetMousePosition(), *m_camera);
-
     RayCollision closest = {0};
-    closest.hit = false;
     closest.distance = FLT_MAX;
 
     for (int m = 0; m < m_map->model.meshCount; m++) {
@@ -306,9 +310,9 @@ void StructureBuilder::updatePreviewPosition() {
 
     if (closest.hit) {
         m_previewPosition = closest.point;
+        m_previewNormal = closest.normal; // Salviamo la normale!
     }
 }
-
 bool StructureBuilder::checkPlacementValidity() {
     if (!m_previewModelLoaded) return false;
 

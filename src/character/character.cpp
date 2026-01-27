@@ -14,51 +14,30 @@ void Character::setSharedShader(Shader shader) {
 }
 
 void Character::applyShader(Shader shader) {
-    if (model.meshCount > 0 && shader.id > 0) {
-        for (int i = 0; i < model.materialCount; i++) {
-            model.materials[i].shader = shader;
-        }
-        TraceLog(LOG_INFO, "Applied shader ID %d to character '%s' (%d materials)", 
-                 shader.id, name.c_str(), model.materialCount);
+    if (modelInstance.isValid() && shader.id > 0) {
+        modelInstance.applyShader(shader);
+        TraceLog(LOG_INFO, "Applied shader ID %d to character '%s' (%d materials)",
+                 shader.id, name.c_str(), modelInstance.materialCount());
     }
 }
 
 Character::Character()
     : health(100), scale(1.0f), name("Character"), isVisible(true),
       quat_rotation{1.0, 0.0, 0.0, 0.0}, eulerRot{0, 0, 0} {
-    model = {0};
-    quat_rotation = QuaternionFromEuler(eulerRot.x, eulerRot.y, eulerRot.z);
-}
-
-Character::Character(Model *modelPtr)
-    : health(100), scale(1.0f), name("Character"), isVisible(true),
-      quat_rotation{1.0, 0.0, 0.0, 0.0}, eulerRot{0, 0, 0} {
-    if (modelPtr != nullptr) {
-        model = *modelPtr;
-        // Applica lo shader condiviso se disponibile
-        if (sharedShader.id > 0) {
-            applyShader(sharedShader);
-        }
-    } else {
-        model = {0};
-    }
     quat_rotation = QuaternionFromEuler(eulerRot.x, eulerRot.y, eulerRot.z);
 }
 
 Character::~Character() {
     TraceLog(LOG_INFO, "Destroying character: %s", name.c_str());
-    if (model.meshCount > 0) {
-        UnloadModel(model);
-        model = {0};
-    }
+    // ModelInstance destructor handles cleanup automatically
 }
 
 Character::Character(Character &&other) noexcept
     : GameObject(std::move(other)), health(other.health),
       name(std::move(other.name)), eulerRot(other.eulerRot),
-      isVisible(other.isVisible), scale(other.scale), model(other.model),
+      isVisible(other.isVisible), scale(other.scale),
+      modelInstance(std::move(other.modelInstance)),
       quat_rotation(other.quat_rotation) {
-    other.model = {0};
     TraceLog(LOG_INFO, "Character moved: %s", name.c_str());
 }
 
@@ -66,47 +45,40 @@ Character &Character::operator=(Character &&other) noexcept {
     if (this != &other) {
         GameObject::operator=(std::move(other));
 
-        if (model.meshCount > 0) {
-            UnloadModel(model);
-        }
-
         health = other.health;
         name = std::move(other.name);
         eulerRot = other.eulerRot;
         isVisible = other.isVisible;
         scale = other.scale;
-        model = other.model;
+        modelInstance = std::move(other.modelInstance);
         quat_rotation = other.quat_rotation;
-
-        other.model = {0};
 
         TraceLog(LOG_INFO, "Character move-assigned: %s", name.c_str());
     }
     return *this;
 }
 
-void Character::loadModel(const std::string &path) {
+void Character::loadModel(ModelManager& manager, const std::string &path) {
     TraceLog(LOG_INFO, "Loading model: %s", path.c_str());
 
-    if (model.meshCount > 0) {
-        UnloadModel(model);
-        model = {0};
-    }
+    // Release old model instance if any
+    modelInstance = ModelInstance();
 
-    model = LoadModel(path.c_str());
+    // Acquire new model instance from manager
+    modelInstance = manager.acquire(path);
 
-    if (model.meshCount > 0) {
-        TraceLog(LOG_INFO, "Model loaded: %d meshes, %d materials", 
-                 model.meshCount, model.materialCount);
-        
+    if (modelInstance.isValid()) {
+        TraceLog(LOG_INFO, "Model loaded: %d meshes, %d materials",
+                 modelInstance.meshCount(), modelInstance.materialCount());
+
         // Debug: stampa info materiali
-        for (int i = 0; i < model.materialCount; i++) {
-            Material& mat = model.materials[i];
+        for (int i = 0; i < modelInstance.materialCount(); i++) {
+            Material& mat = modelInstance.materials()[i];
             TraceLog(LOG_INFO, "Material %d:", i);
             TraceLog(LOG_INFO, "  - Albedo texture ID: %d", mat.maps[MATERIAL_MAP_ALBEDO].texture.id);
             TraceLog(LOG_INFO, "  - Normal texture ID: %d", mat.maps[MATERIAL_MAP_NORMAL].texture.id);
             TraceLog(LOG_INFO, "  - Metalness texture ID: %d", mat.maps[MATERIAL_MAP_METALNESS].texture.id);
-            TraceLog(LOG_INFO, "  - Albedo color: %d,%d,%d,%d", 
+            TraceLog(LOG_INFO, "  - Albedo color: %d,%d,%d,%d",
                      mat.maps[MATERIAL_MAP_ALBEDO].color.r,
                      mat.maps[MATERIAL_MAP_ALBEDO].color.g,
                      mat.maps[MATERIAL_MAP_ALBEDO].color.b,
@@ -114,7 +86,7 @@ void Character::loadModel(const std::string &path) {
             TraceLog(LOG_INFO, "  - Metalness value: %.2f", mat.maps[MATERIAL_MAP_METALNESS].value);
             TraceLog(LOG_INFO, "  - Roughness value: %.2f", mat.maps[MATERIAL_MAP_ROUGHNESS].value);
         }
-        
+
         // Applica lo shader
         if (sharedShader.id > 0) {
             applyShader(sharedShader);
@@ -125,47 +97,19 @@ void Character::loadModel(const std::string &path) {
 }
 
 void Character::unloadModel() {
-    if (model.meshCount > 0) {
-        UnloadModel(model);
-        model = {0};
-    }
+    modelInstance = ModelInstance(); // Release via move assignment
 }
 
 void Character::handleDroppedModel() {
+    // Note: This functionality is disabled without access to ModelManager
+    // The game should handle dropped models at a higher level with access to modelManager
     if (IsFileDropped()) {
         FilePathList droppedFiles = LoadDroppedFiles();
-
+        // Just log for now - proper handling requires ModelManager access
         if (droppedFiles.count == 1) {
-            if (IsFileExtension(droppedFiles.paths[0], ".obj") ||
-                IsFileExtension(droppedFiles.paths[0], ".gltf") ||
-                IsFileExtension(droppedFiles.paths[0], ".glb") ||
-                IsFileExtension(droppedFiles.paths[0], ".vox") ||
-                IsFileExtension(droppedFiles.paths[0], ".iqm") ||
-                IsFileExtension(droppedFiles.paths[0], ".m3d")) {
-
-                auto character = std::make_unique<Character>();
-                character->name = "Dropped Model";
-                character->loadModel(droppedFiles.paths[0]);  // Shader applicato automaticamente qui
-
-                if (character->model.meshCount > 0) {
-                    auto bounds = GetMeshBoundingBox(character->model.meshes[0]);
-                    TraceLog(LOG_INFO, "Model bounds: %.2f, %.2f, %.2f",
-                             bounds.max.x - bounds.min.x, 
-                             bounds.max.y - bounds.min.y,
-                             bounds.max.z - bounds.min.z);
-                }
-
-                auto parent = this->getParent();
-                if (parent != nullptr) {
-                    TraceLog(LOG_INFO, "Adding character to parent");
-                    parent->addChild(std::move(character));
-                    TraceLog(LOG_INFO, "Character added successfully");
-                } else {
-                    TraceLog(LOG_ERROR, "Parent is null!");
-                }
-            }
+            TraceLog(LOG_WARNING, "Dropped model handling requires ModelManager - ignoring: %s",
+                     droppedFiles.paths[0]);
         }
-
         UnloadDroppedFiles(droppedFiles);
     }
 }
@@ -181,32 +125,32 @@ void Character::update() {
 
 void Character::draw() {
     if (!isVisible) return;
-    
-    if (model.meshCount > 0) {
+
+    if (modelInstance.isValid()) {
         Quaternion q = QuaternionFromEuler(
             eulerRot.x * DEG2RAD,
             eulerRot.y * DEG2RAD,
             eulerRot.z * DEG2RAD
         );
-        
+
         Vector3 axis;
         float angle;
         QuaternionToAxisAngle(q, &axis, &angle);
-        
+
         // Calcola la matrice di trasformazione
         Matrix matScale = MatrixScale(scale, scale, scale);
         Matrix matRotation = MatrixRotate(axis, angle * DEG2RAD);
         Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
-        
+
         Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
-        
+
         // Disegna ogni mesh con il suo materiale
-        for (int i = 0; i < model.meshCount; i++) {
-            int materialIndex = model.meshMaterial[i];
-            Material material = model.materials[materialIndex];
-            
+        for (int i = 0; i < modelInstance.meshCount(); i++) {
+            int materialIndex = modelInstance.meshMaterial()[i];
+            Material material = modelInstance.materials()[materialIndex];
+
             // DrawMesh applica automaticamente lo shader del materiale
-            DrawMesh(model.meshes[i], material, transform);
+            DrawMesh(modelInstance.meshes()[i], material, transform);
         }
     } else {
         DrawCube(position, scale, scale, scale, GREEN);

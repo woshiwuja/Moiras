@@ -8,38 +8,34 @@ Shader Structure::sharedShader = {0};
 
 Structure::Structure()
     : GameObject("Structure"),
-      model({0}),
       eulerRot({0.0f, 0.0f, 0.0f}),
       scale(1.0f),
       isPlaced(false),
       bounds({0}) {}
 
 Structure::~Structure() {
-    unloadModel();
+    // ModelInstance destructor handles cleanup automatically
 }
 
 Structure::Structure(Structure&& other) noexcept
     : GameObject(std::move(other)),
-      model(other.model),
+      modelInstance(std::move(other.modelInstance)),
       eulerRot(other.eulerRot),
       scale(other.scale),
       isPlaced(other.isPlaced),
       modelPath(std::move(other.modelPath)),
       bounds(other.bounds) {
-    other.model = {0};
 }
 
 Structure& Structure::operator=(Structure&& other) noexcept {
     if (this != &other) {
-        unloadModel();
         GameObject::operator=(std::move(other));
-        model = other.model;
+        modelInstance = std::move(other.modelInstance);
         eulerRot = other.eulerRot;
         scale = other.scale;
         isPlaced = other.isPlaced;
         modelPath = std::move(other.modelPath);
         bounds = other.bounds;
-        other.model = {0};
     }
     return *this;
 }
@@ -49,16 +45,21 @@ void Structure::update() {
 }
 
 void Structure::draw() {
-    if (!isVisible || model.meshCount == 0) return;
+    if (!isVisible || !modelInstance.isValid()) return;
 
     // Calcola la matrice di trasformazione
     Matrix matScale = MatrixScale(scale, scale, scale);
     Matrix matRotation = MatrixRotateXYZ(eulerRot);
     Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
 
-    model.transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
+    Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-    DrawModel(model, {0, 0, 0}, 1.0f, WHITE);
+    // Draw each mesh with its material
+    for (int i = 0; i < modelInstance.meshCount(); i++) {
+        int materialIndex = modelInstance.meshMaterial()[i];
+        Material material = modelInstance.materials()[materialIndex];
+        DrawMesh(modelInstance.meshes()[i], material, transform);
+    }
 
     GameObject::draw();
 }
@@ -76,12 +77,12 @@ void Structure::gui() {
     GameObject::gui();
 }
 
-void Structure::loadModel(const std::string& path) {
+void Structure::loadModel(ModelManager& manager, const std::string& path) {
     unloadModel();
     modelPath = path;
-    model = LoadModel(path.c_str());
+    modelInstance = manager.acquire(path);
 
-    if (model.meshCount > 0) {
+    if (modelInstance.isValid()) {
         // Applica shader condiviso se disponibile
         if (sharedShader.id != 0) {
             applyShader(sharedShader);
@@ -94,10 +95,7 @@ void Structure::loadModel(const std::string& path) {
 }
 
 void Structure::unloadModel() {
-    if (model.meshCount > 0) {
-        UnloadModel(model);
-        model = {0};
-    }
+    modelInstance = ModelInstance(); // Release via move assignment
 }
 
 void Structure::snapToGround(const Model& ground) {
@@ -124,8 +122,8 @@ void Structure::snapToGround(const Model& ground) {
 }
 
 void Structure::updateBounds() {
-    if (model.meshCount > 0) {
-        bounds = GetModelBoundingBox(model);
+    if (modelInstance.isValid()) {
+        bounds = modelInstance.getBoundingBox();
 
         // Trasforma i bounds in base alla posizione e scala
         Vector3 size = {
@@ -148,8 +146,8 @@ void Structure::updateBounds() {
 }
 
 void Structure::applyShader(Shader shader) {
-    for (int i = 0; i < model.materialCount; i++) {
-        model.materials[i].shader = shader;
+    if (modelInstance.isValid()) {
+        modelInstance.applyShader(shader);
     }
 }
 

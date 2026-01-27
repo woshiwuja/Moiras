@@ -339,6 +339,18 @@ namespace moiras
                 showStyleEditor = !showStyleEditor;
             }
         }
+
+        if (CollapsingHeader("Model Cache"))
+        {
+            if (modelManager)
+            {
+                modelManager->gui();
+            }
+            else
+            {
+                TextColored(ImVec4(1, 0.5f, 0, 1), "ModelManager not set");
+            }
+        }
     }
 
     void Sidebar::drawGameObjectTree(GameObject *obj)

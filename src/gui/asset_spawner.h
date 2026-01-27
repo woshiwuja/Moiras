@@ -2,6 +2,7 @@
 #include "../../rlImGui/rlImGui.h"
 #include "../game/game_object.h"
 #include "../character/character.h"
+#include "../resources/model_manager.h"
 #include <filesystem>
 #include <imgui.h>
 #include <raylib.h>
@@ -21,10 +22,11 @@ private:
     float spawnScale[3] = {1.0f, 1.0f, 1.0f};
     float windowWidth = 600.0f;
     float windowHeight = 350.0f;
-    
+
     Texture2D previewTexture = {0};
     RenderTexture2D previewRenderTarget = {0};
     Camera3D previewCamera = {0};
+    ModelManager* m_modelManager = nullptr;
     
     void loadAssetList() {
         assetFiles.clear();
@@ -140,6 +142,10 @@ private:
 public:
     AssetSpawner() : GameObject("AssetSpawner") {
         loadAssetList();
+    }
+
+    void setModelManager(ModelManager* manager) {
+        m_modelManager = manager;
     }
     
     ~AssetSpawner() {
@@ -315,31 +321,35 @@ public:
         if (selectedAsset < 0 || selectedAsset >= (int)assetFiles.size()) {
             return;
         }
-        
+        if (!m_modelManager) {
+            TraceLog(LOG_ERROR, "AssetSpawner: ModelManager not set!");
+            return;
+        }
+
         // Create a new Character
         auto character = std::make_unique<Character>();
-        
+
         // Load the model
         std::string modelPath = "../assets/" + assetFiles[selectedAsset];
-        character->loadModel(modelPath);
-        
+        character->loadModel(*m_modelManager, modelPath);
+
         // Set position
         character->position = {spawnPosition[0], spawnPosition[1], spawnPosition[2]};
-        
+
         // Set rotation
         character->eulerRot = {
             spawnRotation[0] * DEG2RAD,
             spawnRotation[1] * DEG2RAD,
             spawnRotation[2] * DEG2RAD
         };
-        
+
         // Set scale
         character->scale = spawnScale[0];
-        
+
         // Set name
         std::filesystem::path assetPath(assetFiles[selectedAsset]);
         character->name = assetPath.stem().string();
-        
+
         // Snap to ground
         GameObject* root = getRoot();
         if (root) {
@@ -348,7 +358,7 @@ public:
             if (map) {
                 character->snapToGround(map->model);
             }
-            
+
             // Add to scene
             root->addChild(std::move(character));
         }

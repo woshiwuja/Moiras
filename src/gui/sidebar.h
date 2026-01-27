@@ -2,6 +2,7 @@
 
 #include "../game/game_object.h"
 #include "../lights/lightmanager.h"
+#include "../resources/model_manager.h"
 #include "imgui.h"
 #include <raylib.h>
 
@@ -19,6 +20,9 @@ namespace moiras
 
         // Puntatore al light manager (settato dal Game)
         LightManager *lightManager = nullptr;
+
+        // Puntatore al model manager (settato dal Game)
+        ModelManager *modelManager = nullptr;
 
         // Puntatore al structure builder (settato dal Game)
         StructureBuilder *structureBuilder = nullptr;

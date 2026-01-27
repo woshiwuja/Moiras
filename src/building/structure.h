@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../game/game_object.h"
+#include "../resources/model_manager.h"
 #include <raylib.h>
 #include <string>
 
@@ -9,7 +10,7 @@ namespace moiras {
 // Rappresenta una struttura piazzata nel mondo
 class Structure : public GameObject {
 public:
-    Model model;
+    ModelInstance modelInstance;
     Vector3 eulerRot;
     float scale;
     bool isPlaced;
@@ -33,7 +34,7 @@ public:
     void draw() override;
     void gui() override;
 
-    void loadModel(const std::string& path);
+    void loadModel(ModelManager& manager, const std::string& path);
     void unloadModel();
     void snapToGround(const Model& ground);
     void updateBounds();
@@ -44,6 +45,9 @@ public:
     // Shader condiviso
     static Shader sharedShader;
     static void setSharedShader(Shader shader);
+
+    // Check if model is loaded
+    bool hasModel() const { return modelInstance.isValid(); }
 };
 
 } // namespace moiras

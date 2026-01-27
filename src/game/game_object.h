@@ -13,11 +13,10 @@ namespace moiras
   private:
     static unsigned int nextId;
 
-  protected:
-    vector<unique_ptr<GameObject>> children;
-    unsigned int id;
 
   public:
+      vector<unique_ptr<GameObject>> children;
+    unsigned int id;
     string name;
     bool isVisible;
     Vector3 position;

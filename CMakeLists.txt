@@ -74,6 +74,8 @@ add_executable(
     src/main.cpp
     src/character/character.h
     src/character/character.cpp
+    src/character/controller.h
+    src/character/controller.cpp
     src/game/game.cpp
     src/camera/camera.cpp
     src/camera/camera.h

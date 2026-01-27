@@ -22,18 +22,18 @@ namespace moiras
 
     rlImGuiSetup(false);
 
-    // Create map
-    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.glb");
+    // Create map - USING PYRAMID TEST FOR NAVMESH TESTING
+    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/pyramid_test.obj");
 
-    SetTextureFilter(map->model.materials[0].maps->texture,
-                     TEXTURE_FILTER_ANISOTROPIC_8X);
-
-    SetTextureFilter(map->model.materials->maps->texture,
-                     TEXTURE_FILTER_ANISOTROPIC_8X);
-    map->seaShaderFragment = ("../assets/shaders/sea_shader.fs");
-    map->seaShaderVertex = ("../assets/shaders/sea_shader.vs");
-    map->loadSeaShader();
-    map->addSea();
+    // Skip texture filtering and sea shader for test pyramid
+    // SetTextureFilter(map->model.materials[0].maps->texture,
+    //                  TEXTURE_FILTER_ANISOTROPIC_8X);
+    // SetTextureFilter(map->model.materials->maps->texture,
+    //                  TEXTURE_FILTER_ANISOTROPIC_8X);
+    // map->seaShaderFragment = ("../assets/shaders/sea_shader.fs");
+    // map->seaShaderVertex = ("../assets/shaders/sea_shader.vs");
+    // map->loadSeaShader();
+    // map->addSea();
 
     auto gui = std::make_unique<Gui>();
     auto sidebar = gui->getChildOfType<Sidebar>();
@@ -115,6 +115,26 @@ namespace moiras
 
     Character::setSharedShader(lightmanager.getShader());
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
+
+    // Crea il player character
+    auto player = std::make_unique<Character>();
+    player->name = "Player";
+    player->position = {0.0f, 10.0f, 0.0f};  // Posizione iniziale
+    player->scale = 1.0f;
+
+    // Salva il puntatore PRIMA del move
+    Character* playerPtr = player.get();
+
+    // Aggiungi il player al root
+    root.addChild(std::move(player));
+
+    // Crea il controller per il player
+    if (mapPtr && playerPtr)
+    {
+      playerController = std::make_unique<CharacterController>(playerPtr, &mapPtr->navMesh, &mapPtr->model);
+      playerController->setMovementSpeed(8.0f);
+      TraceLog(LOG_INFO, "Player controller created and initialized");
+    }
   }
 
   void Game::loop(Window window)
@@ -125,6 +145,12 @@ namespace moiras
 
       auto camera = root.getChildOfType<GameCamera>();
       auto map = root.getChildOfType<Map>();
+
+      // Aggiorna il player controller
+      if (playerController && camera)
+      {
+        playerController->update(camera);
+      }
 
       // Aggiorna luci
       lightmanager.updateCameraPosition(camera->rcamera.position);
@@ -193,6 +219,13 @@ namespace moiras
         }
         DrawSphere(map->debugPath.back(), 0.5f, YELLOW);
       }
+
+      // Draw player controller debug (path, waypoints, target)
+      if (playerController)
+      {
+        playerController->drawDebug();
+      }
+
       camera->endMode3D();
       //  ImGui
       rlImGuiBegin();

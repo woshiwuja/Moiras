@@ -52,9 +52,9 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
     cfg.walkableClimb = (int)floorf(m_agentMaxClimb / cfg.ch);
     cfg.walkableRadius = (int)ceilf(m_agentRadius / cfg.cs);
     cfg.maxEdgeLen = (int)(12.0f / cfg.cs);
-    cfg.maxSimplificationError = 1.3f;
-    cfg.minRegionArea = (int)rcSqr(8.0f);
-    cfg.mergeRegionArea = (int)rcSqr(20.0f);
+    cfg.maxSimplificationError = m_maxSimplificationError;
+    cfg.minRegionArea = (int)rcSqr(m_minRegionArea);
+    cfg.mergeRegionArea = (int)rcSqr(m_mergeRegionArea);
     cfg.maxVertsPerPoly = 6;
     cfg.detailSampleDist = cfg.cs * 6.0f;
     cfg.detailSampleMaxError = cfg.ch * 1.0f;
@@ -66,7 +66,17 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
     rcVcopy(cfg.bmax, bmax);
     rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
 
-    TraceLog(LOG_INFO, "NavMesh: Grid size %d x %d", cfg.width, cfg.height);
+    TraceLog(LOG_INFO, "NavMesh: Bounding box: (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
+             bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
+    TraceLog(LOG_INFO, "NavMesh: Map dimensions: %.2f x %.2f x %.2f",
+             bmax[0]-bmin[0], bmax[1]-bmin[1], bmax[2]-bmin[2]);
+    TraceLog(LOG_INFO, "NavMesh: Grid size %d x %d (total cells: %d)",
+             cfg.width, cfg.height, cfg.width * cfg.height);
+    TraceLog(LOG_INFO, "NavMesh: Cell size: %.2f, Cell height: %.2f", cfg.cs, cfg.ch);
+    TraceLog(LOG_INFO, "NavMesh: Agent - Height: %.2f, Radius: %.2f, MaxClimb: %.2f, MaxSlope: %.2f°",
+             m_agentHeight, m_agentRadius, m_agentMaxClimb, m_agentMaxSlope);
+    TraceLog(LOG_INFO, "NavMesh: Filtering - MinRegion: %.0f² (=%d cells), MergeRegion: %.0f² (=%d cells), SimplificationError: %.2f",
+             m_minRegionArea, cfg.minRegionArea, m_mergeRegionArea, cfg.mergeRegionArea, m_maxSimplificationError);
 
     // 3. Conversione Indici
     int triCount = mesh.triangleCount;
@@ -207,6 +217,19 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
         pmesh->flags[i] = 1;  // Walkable
     }
 
+    TraceLog(LOG_INFO, "NavMesh: PolyMesh created - Vertices: %d, Polygons: %d",
+             pmesh->nverts, pmesh->npolys);
+    TraceLog(LOG_INFO, "NavMesh: DetailMesh - Vertices: %d, Triangles: %d",
+             dmesh->nverts, dmesh->ntris);
+
+    // Check per limiti di Detour
+    if (pmesh->nverts > 60000) {
+        TraceLog(LOG_WARNING, "NavMesh: Troppi vertici (%d > 60000), potrebbe fallire!", pmesh->nverts);
+    }
+    if (pmesh->npolys > 32000) {
+        TraceLog(LOG_WARNING, "NavMesh: Troppi poligoni (%d > 32000), potrebbe fallire!", pmesh->npolys);
+    }
+
     // 11. Creazione NavMesh Data per Detour
     dtNavMeshCreateParams params;
     memset(&params, 0, sizeof(params));
@@ -233,9 +256,13 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
 
     unsigned char* navData = nullptr;
     int navDataSize = 0;
-    
+
     if (!dtCreateNavMeshData(&params, &navData, &navDataSize)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to create Detour navmesh data");
+        TraceLog(LOG_ERROR, "NavMesh: Failed to create Detour navmesh data!");
+        TraceLog(LOG_ERROR, "NavMesh: Cause probabili:");
+        TraceLog(LOG_ERROR, "  - Troppi vertici (%d) o poligoni (%d)", pmesh->nverts, pmesh->npolys);
+        TraceLog(LOG_ERROR, "  - Grid troppo grande (%d x %d)", cfg.width, cfg.height);
+        TraceLog(LOG_ERROR, "NavMesh: SOLUZIONE: Aumenta cellSize in map.cpp o usa una mappa più piccola");
         rcFreePolyMesh(pmesh);
         rcFreePolyMeshDetail(dmesh);
         return false;
@@ -279,7 +306,7 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
 
 std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
     std::vector<Vector3> pathPoints;
-    
+
     if (!m_navMesh || !m_navQuery) {
         TraceLog(LOG_WARNING, "NavMesh: NavMesh not initialized");
         return pathPoints;
@@ -287,7 +314,8 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
 
     float sPos[3] = { start.x, start.y, start.z };
     float ePos[3] = { end.x, end.y, end.z };
-    float extents[3] = { 2.0f, 4.0f, 2.0f };
+    // Aumentati gli extents per trovare poligoni più lontani, specialmente in verticale
+    float extents[3] = { 10.0f, 50.0f, 10.0f };
 
     dtQueryFilter filter;
     filter.setIncludeFlags(0xFFFF);
@@ -295,12 +323,15 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
 
     dtPolyRef startRef, endRef;
     float nearestStart[3], nearestEnd[3];
-    
+
     m_navQuery->findNearestPoly(sPos, extents, &filter, &startRef, nearestStart);
     m_navQuery->findNearestPoly(ePos, extents, &filter, &endRef, nearestEnd);
 
     if (!startRef || !endRef) {
-        TraceLog(LOG_WARNING, "NavMesh: Could not find start or end polygon");
+        TraceLog(LOG_WARNING, "NavMesh: Could not find start or end polygon (start: %.2f,%.2f,%.2f, end: %.2f,%.2f,%.2f)",
+                 start.x, start.y, start.z, end.x, end.y, end.z);
+        TraceLog(LOG_INFO, "NavMesh: Start polygon found: %s, End polygon found: %s",
+                 startRef ? "YES" : "NO", endRef ? "YES" : "NO");
         return pathPoints;
     }
 
@@ -330,6 +361,66 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
     }
 
     return pathPoints;
+}
+
+void NavMesh::setParametersForMapSize(float mapSize) {
+    if (mapSize < 500.0f) {
+        // Mappe piccole (< 500 unità)
+        m_cellSize = 0.2f;
+        m_cellHeight = 0.2f;
+        m_agentRadius = 0.5f;
+        TraceLog(LOG_INFO, "NavMesh: Parameters set for SMALL map (< 500)");
+    } else if (mapSize < 2000.0f) {
+        // Mappe medie (500-2000 unità)
+        m_cellSize = 0.3f;
+        m_cellHeight = 0.3f;
+        m_agentRadius = 0.6f;
+        TraceLog(LOG_INFO, "NavMesh: Parameters set for MEDIUM map (500-2000)");
+    } else if (mapSize < 5000.0f) {
+        // Mappe grandi (2000-5000 unità)
+        m_cellSize = 0.5f;
+        m_cellHeight = 0.4f;
+        m_agentRadius = 0.8f;
+        TraceLog(LOG_INFO, "NavMesh: Parameters set for LARGE map (2000-5000)");
+    } else {
+        // Mappe molto grandi (> 5000 unità)
+        m_cellSize = 0.8f;
+        m_cellHeight = 0.5f;
+        m_agentRadius = 1.0f;
+        TraceLog(LOG_INFO, "NavMesh: Parameters set for HUGE map (> 5000)");
+    }
+}
+
+bool NavMesh::projectPointToNavMesh(Vector3 point, Vector3& projectedPoint) {
+    if (!m_navMesh || !m_navQuery) {
+        TraceLog(LOG_WARNING, "NavMesh: NavMesh not initialized");
+        return false;
+    }
+
+    float pos[3] = { point.x, point.y, point.z };
+    float extents[3] = { 10.0f, 50.0f, 10.0f };
+
+    dtQueryFilter filter;
+    filter.setIncludeFlags(0xFFFF);
+    filter.setExcludeFlags(0);
+
+    dtPolyRef polyRef;
+    float nearestPoint[3];
+
+    dtStatus status = m_navQuery->findNearestPoly(pos, extents, &filter, &polyRef, nearestPoint);
+
+    if (dtStatusSucceed(status) && polyRef) {
+        projectedPoint.x = nearestPoint[0];
+        projectedPoint.y = nearestPoint[1];
+        projectedPoint.z = nearestPoint[2];
+        TraceLog(LOG_INFO, "NavMesh: Point projected from (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
+                 point.x, point.y, point.z, projectedPoint.x, projectedPoint.y, projectedPoint.z);
+        return true;
+    }
+
+    TraceLog(LOG_WARNING, "NavMesh: Could not project point (%.2f,%.2f,%.2f) to navmesh",
+             point.x, point.y, point.z);
+    return false;
 }
 
 void NavMesh::buildDebugMesh() {

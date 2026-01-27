@@ -11,7 +11,7 @@ GameObject::GameObject(const std::string &name)
       name(name.empty() ? "GameObject_" + std::to_string(id) : name),
       isVisible(true), 
       position(Vector3{0.0f, 0.0f, 0.0f}),
-      parent(nullptr) { // AGGIUNTO: inizializza parent a nullptr
+      parent(nullptr) { 
   std::cout << this->name << "\n";
 }
 
@@ -44,13 +44,11 @@ GameObject &GameObject::operator=(GameObject &&other) noexcept {
     isVisible = other.isVisible;
     position = other.position;
     
-    // Aggiorna i parent pointer dei children
     for (auto &child : children) {
       if (child) {
         child->parent = this;
       }
     }
-    
     other.parent = nullptr;
   }
   return *this;

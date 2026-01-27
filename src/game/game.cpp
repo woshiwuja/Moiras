@@ -22,18 +22,18 @@ namespace moiras
 
     rlImGuiSetup(false);
 
-    // Create map
-    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.glb");
+    // Create map - USING PYRAMID TEST FOR NAVMESH TESTING
+    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/pyramid_test.obj");
 
-    SetTextureFilter(map->model.materials[0].maps->texture,
-                     TEXTURE_FILTER_ANISOTROPIC_8X);
-
-    SetTextureFilter(map->model.materials->maps->texture,
-                     TEXTURE_FILTER_ANISOTROPIC_8X);
-    map->seaShaderFragment = ("../assets/shaders/sea_shader.fs");
-    map->seaShaderVertex = ("../assets/shaders/sea_shader.vs");
-    map->loadSeaShader();
-    map->addSea();
+    // Skip texture filtering and sea shader for test pyramid
+    // SetTextureFilter(map->model.materials[0].maps->texture,
+    //                  TEXTURE_FILTER_ANISOTROPIC_8X);
+    // SetTextureFilter(map->model.materials->maps->texture,
+    //                  TEXTURE_FILTER_ANISOTROPIC_8X);
+    // map->seaShaderFragment = ("../assets/shaders/sea_shader.fs");
+    // map->seaShaderVertex = ("../assets/shaders/sea_shader.vs");
+    // map->loadSeaShader();
+    // map->addSea();
 
     auto gui = std::make_unique<Gui>();
     auto sidebar = gui->getChildOfType<Sidebar>();

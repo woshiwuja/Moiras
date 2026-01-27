@@ -407,10 +407,10 @@ unsigned char* NavMesh::buildTileData(int tileX, int tileY, int& dataSize) {
         rcVcopy(debugPmesh->bmin, pmesh->bmin);
         rcVcopy(debugPmesh->bmax, pmesh->bmax);
 
-        debugPmesh->verts = (unsigned short*)rcAlloc(sizeof(unsigned short) * pmesh->nverts * 3, RC_ALLOC_PERM);
-        debugPmesh->polys = (unsigned short*)rcAlloc(sizeof(unsigned short) * pmesh->npolys * pmesh->nvp * 2, RC_ALLOC_PERM);
-        debugPmesh->flags = (unsigned short*)rcAlloc(sizeof(unsigned short) * pmesh->npolys, RC_ALLOC_PERM);
-        debugPmesh->areas = (unsigned char*)rcAlloc(sizeof(unsigned char) * pmesh->npolys, RC_ALLOC_PERM);
+        debugPmesh->verts = (unsigned short*)malloc(sizeof(unsigned short) * pmesh->nverts * 3);
+        debugPmesh->polys = (unsigned short*)malloc(sizeof(unsigned short) * pmesh->npolys * pmesh->nvp * 2);
+        debugPmesh->flags = (unsigned short*)malloc(sizeof(unsigned short) * pmesh->npolys);
+        debugPmesh->areas = (unsigned char*)malloc(sizeof(unsigned char) * pmesh->npolys);
 
         if (debugPmesh->verts && debugPmesh->polys && debugPmesh->flags && debugPmesh->areas) {
             memcpy(debugPmesh->verts, pmesh->verts, sizeof(unsigned short) * pmesh->nverts * 3);

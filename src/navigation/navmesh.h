@@ -21,13 +21,17 @@ public:
   // Proietta un punto sulla navmesh (trova il punto più vicino sulla navmesh)
   bool projectPointToNavMesh(Vector3 point, Vector3& projectedPoint);
 
-  // Parametri configurabili
-  float m_cellSize = 0.1f;
-  float m_cellHeight = 0.2f;
+  // Configura parametri per mappe di diverse dimensioni
+  void setParametersForMapSize(float mapSize);
+
+  // Parametri configurabili per mappe grandi (4000x4000)
+  // Aumentati per performance e gestione migliore delle pendenze
+  float m_cellSize = 0.3f;           // Era 0.1f - riduce celle di 9x per performance
+  float m_cellHeight = 0.3f;         // Era 0.2f - migliore risoluzione verticale
   float m_agentHeight = 2.0f;
-  float m_agentRadius = 0.3f;
-  float m_agentMaxClimb = 2.9f;
-  float m_agentMaxSlope = 65.0f;
+  float m_agentRadius = 0.6f;        // Era 0.3f - più realistico per character
+  float m_agentMaxClimb = 0.9f;      // Era 2.9f - più realistico (90cm)
+  float m_agentMaxSlope = 45.0f;     // Era 65.0f - pendenze camminabili realistiche
 
 
 private:

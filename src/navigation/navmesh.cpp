@@ -52,12 +52,12 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
     cfg.walkableClimb = (int)floorf(m_agentMaxClimb / cfg.ch);
     cfg.walkableRadius = (int)ceilf(m_agentRadius / cfg.cs);
     cfg.maxEdgeLen = (int)(12.0f / cfg.cs);
-    cfg.maxSimplificationError = 1.3f;
-    cfg.minRegionArea = (int)rcSqr(8.0f);
-    cfg.mergeRegionArea = (int)rcSqr(20.0f);
+    cfg.maxSimplificationError = 1.5f;           // Era 1.3f - più tolleranza per mappe grandi
+    cfg.minRegionArea = (int)rcSqr(12.0f);      // Era 8.0f (64) - ora 144 per filtrare regioni piccole
+    cfg.mergeRegionArea = (int)rcSqr(30.0f);    // Era 20.0f (400) - ora 900 per merge migliore
     cfg.maxVertsPerPoly = 6;
     cfg.detailSampleDist = cfg.cs * 6.0f;
-    cfg.detailSampleMaxError = cfg.ch * 1.0f;
+    cfg.detailSampleMaxError = cfg.ch * 1.5f;    // Era 1.0f - più tolleranza
 
     // 2. Calcolo Bounding Box
     float bmin[3], bmax[3];
@@ -66,7 +66,15 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
     rcVcopy(cfg.bmax, bmax);
     rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
 
-    TraceLog(LOG_INFO, "NavMesh: Grid size %d x %d", cfg.width, cfg.height);
+    TraceLog(LOG_INFO, "NavMesh: Bounding box: (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
+             bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
+    TraceLog(LOG_INFO, "NavMesh: Map dimensions: %.2f x %.2f x %.2f",
+             bmax[0]-bmin[0], bmax[1]-bmin[1], bmax[2]-bmin[2]);
+    TraceLog(LOG_INFO, "NavMesh: Grid size %d x %d (total cells: %d)",
+             cfg.width, cfg.height, cfg.width * cfg.height);
+    TraceLog(LOG_INFO, "NavMesh: Cell size: %.2f, Cell height: %.2f", cfg.cs, cfg.ch);
+    TraceLog(LOG_INFO, "NavMesh: Agent - Height: %.2f, Radius: %.2f, MaxClimb: %.2f, MaxSlope: %.2f°",
+             m_agentHeight, m_agentRadius, m_agentMaxClimb, m_agentMaxSlope);
 
     // 3. Conversione Indici
     int triCount = mesh.triangleCount;
@@ -334,6 +342,34 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
     }
 
     return pathPoints;
+}
+
+void NavMesh::setParametersForMapSize(float mapSize) {
+    if (mapSize < 500.0f) {
+        // Mappe piccole (< 500 unità)
+        m_cellSize = 0.2f;
+        m_cellHeight = 0.2f;
+        m_agentRadius = 0.5f;
+        TraceLog(LOG_INFO, "NavMesh: Parameters set for SMALL map (< 500)");
+    } else if (mapSize < 2000.0f) {
+        // Mappe medie (500-2000 unità)
+        m_cellSize = 0.3f;
+        m_cellHeight = 0.3f;
+        m_agentRadius = 0.6f;
+        TraceLog(LOG_INFO, "NavMesh: Parameters set for MEDIUM map (500-2000)");
+    } else if (mapSize < 5000.0f) {
+        // Mappe grandi (2000-5000 unità)
+        m_cellSize = 0.5f;
+        m_cellHeight = 0.4f;
+        m_agentRadius = 0.8f;
+        TraceLog(LOG_INFO, "NavMesh: Parameters set for LARGE map (2000-5000)");
+    } else {
+        // Mappe molto grandi (> 5000 unità)
+        m_cellSize = 0.8f;
+        m_cellHeight = 0.5f;
+        m_agentRadius = 1.0f;
+        TraceLog(LOG_INFO, "NavMesh: Parameters set for HUGE map (> 5000)");
+    }
 }
 
 bool NavMesh::projectPointToNavMesh(Vector3 point, Vector3& projectedPoint) {

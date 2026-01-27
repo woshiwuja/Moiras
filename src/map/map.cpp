@@ -132,16 +132,29 @@ void Map::buildNavMesh() {
         BoundingBox bounds = GetMeshBoundingBox(model.meshes[0]);
         float mapWidth = bounds.max.x - bounds.min.x;
         float mapLength = bounds.max.z - bounds.min.z;
+        float mapSize = fmaxf(mapWidth, mapLength);
 
-        TraceLog(LOG_INFO, "Map size: %.1f x %.1f", mapWidth, mapLength);
+        TraceLog(LOG_INFO, "Map size: %.1f x %.1f (max: %.1f)", mapWidth, mapLength, mapSize);
 
-        float maxGridSize = 500.0f;
-        float suggestedCellSize = fmaxf(mapWidth, mapLength) / maxGridSize;
+        // Calcolo intelligente del cellSize per mappe grandi
+        // Obiettivo: grid tra 1000 e 8000 celle per lato
+        float targetGridSize = 5000.0f;  // Era 500, ora 5000 per mappe grandi
+        float suggestedCellSize = mapSize / targetGridSize;
 
-        navMesh.m_cellSize = fmaxf(0.5f, suggestedCellSize);
-        navMesh.m_cellHeight = navMesh.m_cellSize * 0.5f;
+        // Clamp tra 0.3 e 2.0 per evitare estremi
+        navMesh.m_cellSize = fmaxf(0.3f, fminf(2.0f, suggestedCellSize));
+        navMesh.m_cellHeight = fmaxf(0.3f, navMesh.m_cellSize * 0.6f);
 
-        TraceLog(LOG_INFO, "Using cellSize: %.2f", navMesh.m_cellSize);
+        // Per mappe grandi, usa parametri ottimizzati
+        if (mapSize >= 2000.0f) {
+            navMesh.m_agentRadius = 0.8f;
+            navMesh.m_agentMaxClimb = 0.9f;
+            navMesh.m_agentMaxSlope = 45.0f;
+        }
+
+        TraceLog(LOG_INFO, "Using cellSize: %.2f, cellHeight: %.2f (grid ~%.0f x %.0f)",
+                 navMesh.m_cellSize, navMesh.m_cellHeight,
+                 mapWidth / navMesh.m_cellSize, mapLength / navMesh.m_cellSize);
 
         // Passa la trasformazione del modello!
         navMeshBuilt = navMesh.build(model.meshes[0], model.transform);

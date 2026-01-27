@@ -10,13 +10,16 @@ namespace moiras {
 
 ModelInstance::ModelInstance()
     : m_manager(nullptr), m_meshes(nullptr), m_meshCount(0),
-      m_meshMaterial(nullptr), m_materials(nullptr), m_materialCount(0) {}
+      m_meshMaterial(nullptr), m_bones(nullptr), m_boneCount(0),
+      m_bindPose(nullptr), m_materials(nullptr), m_materialCount(0) {}
 
 ModelInstance::ModelInstance(ModelManager* manager, const std::string& path,
                              Mesh* meshes, int meshCount,
-                             int* meshMaterial, Material* sourceMaterials, int materialCount)
+                             int* meshMaterial, Material* sourceMaterials, int materialCount,
+                             BoneInfo* bones, int boneCount, Transform* bindPose)
     : m_manager(manager), m_path(path),
       m_meshes(meshes), m_meshCount(meshCount), m_meshMaterial(meshMaterial),
+      m_bones(bones), m_boneCount(boneCount), m_bindPose(bindPose),
       m_materials(nullptr), m_materialCount(materialCount) {
 
     // Clone materials array for per-instance shader support
@@ -36,6 +39,8 @@ ModelInstance::ModelInstance(ModelInstance&& other) noexcept
     : m_manager(other.m_manager), m_path(std::move(other.m_path)),
       m_meshes(other.m_meshes), m_meshCount(other.m_meshCount),
       m_meshMaterial(other.m_meshMaterial),
+      m_bones(other.m_bones), m_boneCount(other.m_boneCount),
+      m_bindPose(other.m_bindPose),
       m_materials(other.m_materials), m_materialCount(other.m_materialCount) {
 
     // Clear other to prevent double-release
@@ -43,6 +48,9 @@ ModelInstance::ModelInstance(ModelInstance&& other) noexcept
     other.m_meshes = nullptr;
     other.m_meshCount = 0;
     other.m_meshMaterial = nullptr;
+    other.m_bones = nullptr;
+    other.m_boneCount = 0;
+    other.m_bindPose = nullptr;
     other.m_materials = nullptr;
     other.m_materialCount = 0;
 }
@@ -56,6 +64,9 @@ ModelInstance& ModelInstance::operator=(ModelInstance&& other) noexcept {
         m_meshes = other.m_meshes;
         m_meshCount = other.m_meshCount;
         m_meshMaterial = other.m_meshMaterial;
+        m_bones = other.m_bones;
+        m_boneCount = other.m_boneCount;
+        m_bindPose = other.m_bindPose;
         m_materials = other.m_materials;
         m_materialCount = other.m_materialCount;
 
@@ -63,6 +74,9 @@ ModelInstance& ModelInstance::operator=(ModelInstance&& other) noexcept {
         other.m_meshes = nullptr;
         other.m_meshCount = 0;
         other.m_meshMaterial = nullptr;
+        other.m_bones = nullptr;
+        other.m_boneCount = 0;
+        other.m_bindPose = nullptr;
         other.m_materials = nullptr;
         other.m_materialCount = 0;
     }
@@ -86,6 +100,9 @@ void ModelInstance::release() {
     m_meshes = nullptr;
     m_meshCount = 0;
     m_meshMaterial = nullptr;
+    m_bones = nullptr;
+    m_boneCount = 0;
+    m_bindPose = nullptr;
     m_path.clear();
 }
 
@@ -158,7 +175,9 @@ ModelInstance ModelManager::acquire(const std::string& path) {
     return ModelInstance(this, path,
                          cached.model.meshes, cached.model.meshCount,
                          cached.model.meshMaterial,
-                         cached.model.materials, cached.model.materialCount);
+                         cached.model.materials, cached.model.materialCount,
+                         cached.model.bones, cached.model.boneCount,
+                         cached.model.bindPose);
 }
 
 void ModelManager::preload(const std::string& path) {

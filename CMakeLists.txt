@@ -54,7 +54,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(RecastNavigation)
 
 # Crea libreria ImGui PRIMA dell'eseguibile
-
+add_subdirectory(imgui)
 
 add_custom_target(copy_assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/resources ${CMAKE_CURRENT_BINARY_DIR}/resources
@@ -106,10 +106,16 @@ target_include_directories(Moiras PUBLIC
     ${recastnavigation_SOURCE_DIR}/DetourCrowd/Include
     raylib/src/
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/
+    ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui/
 )
-target_include_directories(Moiras PRIVATE 
+target_include_directories(Moiras PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui
+    ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui
 )
+
+# Disable Font Awesome in rlImGui (optional font icons)
+target_compile_definitions(Moiras PRIVATE NO_FONT_AWESOME)
+
 target_link_libraries(Moiras
     PRIVATE
     raylib

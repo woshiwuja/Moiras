@@ -50,6 +50,8 @@ void CharacterController::update(GameCamera* camera) {
     // Muove il character lungo il path
     if (m_isMoving) {
         followPath();
+        // Update character animation while moving
+        m_character->updateAnimation();
     }
 }
 
@@ -143,10 +145,16 @@ void CharacterController::calculatePath(Vector3 targetPos) {
         m_currentPathIndex = 0;
         m_isMoving = true;
 
+        // Start the Running animation
+        if (m_character->setAnimation("Running")) {
+            m_character->playAnimation();
+        }
+
         TraceLog(LOG_INFO, "CharacterController: Path calculated with %d waypoints",
                  (int)m_currentPath.size());
     } else {
         m_isMoving = false;
+        m_character->stopAnimation();
         TraceLog(LOG_WARNING, "CharacterController: Failed to find path");
     }
 }
@@ -205,6 +213,11 @@ void CharacterController::stop() {
     m_isMoving = false;
     m_currentPath.clear();
     m_currentPathIndex = 0;
+
+    // Stop the animation when the character stops
+    if (m_character) {
+        m_character->stopAnimation();
+    }
 }
 
 void CharacterController::drawDebug() {

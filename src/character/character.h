@@ -18,6 +18,14 @@ public:
   ModelInstance modelInstance;
   Quaternion quat_rotation;
 
+  // Animation data
+  ModelAnimation* m_animations = nullptr;
+  int m_animationCount = 0;
+  int m_currentAnimIndex = -1;
+  int m_currentFrame = 0;
+  float m_animationTimer = 0.0f;
+  bool m_isAnimating = false;
+
   Character();
   ~Character();
 
@@ -46,6 +54,16 @@ public:
 
   // For backwards compatibility - check if model is loaded
   bool hasModel() const { return modelInstance.isValid(); }
+
+  // Animation methods
+  void loadAnimations(const std::string& modelPath);
+  void unloadAnimations();
+  bool setAnimation(const std::string& animName);
+  void playAnimation();
+  void stopAnimation();
+  void updateAnimation();  // Call every frame to advance animation
+  bool isAnimating() const { return m_isAnimating; }
+  int getAnimationIndex(const std::string& name) const;
 };
 
 } // namespace moiras

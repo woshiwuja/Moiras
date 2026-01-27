@@ -30,6 +30,11 @@ public:
     int meshCount() const { return m_meshCount; }
     int* meshMaterial() const { return m_meshMaterial; }
 
+    // Access bone data for animations
+    BoneInfo* bones() const { return m_bones; }
+    int boneCount() const { return m_boneCount; }
+    Transform* bindPose() const { return m_bindPose; }
+
     // Access per-instance materials
     Material* materials() { return m_materials; }
     const Material* materials() const { return m_materials; }
@@ -50,7 +55,8 @@ private:
     // Only ModelManager can create valid instances
     ModelInstance(ModelManager* manager, const std::string& path,
                   Mesh* meshes, int meshCount,
-                  int* meshMaterial, Material* sourceMaterials, int materialCount);
+                  int* meshMaterial, Material* sourceMaterials, int materialCount,
+                  BoneInfo* bones, int boneCount, Transform* bindPose);
 
     void release();
 
@@ -61,6 +67,11 @@ private:
     Mesh* m_meshes = nullptr;
     int m_meshCount = 0;
     int* m_meshMaterial = nullptr;
+
+    // Shared bone data for animations (owned by ModelManager)
+    BoneInfo* m_bones = nullptr;
+    int m_boneCount = 0;
+    Transform* m_bindPose = nullptr;
 
     // Per-instance materials (owned by this instance)
     Material* m_materials = nullptr;

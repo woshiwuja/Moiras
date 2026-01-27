@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../game/game_object.h"
+#include "../resources/model_manager.h"
 #include "../map/map.h"
 #include <raylib.h>
 #include <string>
@@ -14,11 +15,10 @@ public:
   Vector3 eulerRot;
   bool isVisible = true;
   float scale;
-  Model model;
+  ModelInstance modelInstance;
   Quaternion quat_rotation;
 
   Character();
-  Character(Model *);
   ~Character();
 
   Character(Character &&other) noexcept;
@@ -31,7 +31,7 @@ public:
   void draw() override;
   void gui() override;
 
-  void loadModel(const std::string &path);
+  void loadModel(ModelManager& manager, const std::string &path);
   void unloadModel();
   void snapToGround(const Model &ground);
   void handleDroppedModel();
@@ -43,6 +43,9 @@ public:
   // Shader statico condiviso da tutti i character
   static Shader sharedShader;
   static void setSharedShader(Shader shader);
+
+  // For backwards compatibility - check if model is loaded
+  bool hasModel() const { return modelInstance.isValid(); }
 };
 
 } // namespace moiras

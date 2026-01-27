@@ -86,7 +86,7 @@ void GameCamera::cameraControl() {
 
       auto mapObj = getParent()->getChildOfType<Map>();
       if (mapObj) {
-        Model model = mapObj->model;
+        const Model& model = mapObj->model;  // Reference to avoid VRAM copy
         for (int m = 0; m < model.meshCount; m++) {
           auto hitInfo =
               GetRayCollisionMesh(centerRay, model.meshes[m], model.transform);
@@ -161,7 +161,7 @@ void GameCamera::cameraControl() {
       auto mapObj = getParent()->getChildOfType<Map>();
       if (mapObj)
       {
-        Model model = mapObj->model;
+        const Model& model = mapObj->model;  // Reference to avoid VRAM copy
         for (int m = 0; m < model.meshCount; m++)
         {
           auto hitInfo =
@@ -239,7 +239,7 @@ void GameCamera::cameraControl() {
   collision.hit = false;
   collision.distance = std::numeric_limits<float>::max();
 
-  auto model = getParent()->getChildOfType<Map>()->model;
+  const auto& model = getParent()->getChildOfType<Map>()->model;  // Reference to avoid VRAM copy
   for (int m = 0; m < model.meshCount; m++) {
     auto hitInfo = GetRayCollisionMesh(ray, model.meshes[m], model.transform);
     if (hitInfo.hit) {

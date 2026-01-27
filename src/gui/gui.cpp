@@ -28,4 +28,11 @@ Gui::Gui() {
   style.TreeLinesFlags = ImGuiTreeNodeFlags_DrawLinesFull;
   style.WindowRounding = 8;
 };
+
+void Gui::setModelManager(ModelManager* manager) {
+  auto assetSpawner = getChildOfType<AssetSpawner>();
+  if (assetSpawner) {
+    assetSpawner->setModelManager(manager);
+  }
+}
 } // namespace moiras

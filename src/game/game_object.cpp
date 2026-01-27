@@ -55,15 +55,15 @@ GameObject &GameObject::operator=(GameObject &&other) noexcept {
 }
 
 void GameObject::update() {
-  for (auto &child : children) {
-    if (child) {
-      child->update();
+for (size_t i = 0; i < children.size(); ++i) {
+        if (children[i]) {
+            children[i]->update();
+        }
     }
-  }
 }
 
 void GameObject::draw() {
-  for (auto &child : children) {
+  for (const auto &child : children) {
     if (child) {
       child->draw();
     }
@@ -71,7 +71,7 @@ void GameObject::draw() {
 }
 
 void GameObject::gui() {
-  for (auto &child : children) {
+  for (const auto &child : children) {
     if (child) {
       child->gui();
     }

@@ -1,6 +1,7 @@
 #pragma once
 #include "../../rlImGui/rlImGui.h"
 #include "../lights/lightmanager.h"
+#include "../resources/model_manager.h"
 #include "../window/window.h"
 #include "../character/controller.h"
 #include "../building/structure_builder.h"
@@ -18,6 +19,7 @@ class Game {
 public:
   GameObject root;
   LightManager lightmanager;
+  ModelManager modelManager;
 
   // Player controller
   std::unique_ptr<CharacterController> playerController;

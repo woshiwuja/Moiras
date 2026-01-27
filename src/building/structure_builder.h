@@ -2,6 +2,7 @@
 
 #include "../game/game_object.h"
 #include "../navigation/navmesh.h"
+#include "../resources/model_manager.h"
 #include "structure.h"
 #include <raylib.h>
 #include <string>
@@ -26,6 +27,7 @@ public:
     void setMap(Map* map);
     void setCamera(Camera3D* camera);
     void setNavMesh(NavMesh* navMesh);
+    void setModelManager(ModelManager* modelManager);
 
     // Controlla la modalita' building
     bool isBuildingMode() const { return m_buildingMode; }
@@ -56,6 +58,7 @@ private:
     int m_selectedAsset;
     int m_lastSelectedAsset;
     float m_previewRotationY;
+    Vector3 m_previewNormal;
     float m_previewScale;
     bool m_isValidPlacement;
 
@@ -63,6 +66,7 @@ private:
     Map* m_map;
     Camera3D* m_camera;
     NavMesh* m_navMesh;
+    ModelManager* m_modelManager;
 
     // Preview model (mostrato durante il building mode)
     Model m_previewModel;

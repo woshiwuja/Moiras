@@ -36,11 +36,13 @@ namespace moiras
     map->addSea();
 
     auto gui = std::make_unique<Gui>();
+    gui->setModelManager(&modelManager);
     auto sidebar = gui->getChildOfType<Sidebar>();
     if (sidebar)
     {
       sidebar->lightManager = &lightmanager;
-      TraceLog(LOG_INFO, "LightManager linked to Sidebar");
+      sidebar->modelManager = &modelManager;
+      TraceLog(LOG_INFO, "LightManager and ModelManager linked to Sidebar");
     }
 
     // Crea il StructureBuilder per il map building
@@ -131,7 +133,7 @@ namespace moiras
     // Crea il player character
     auto player = std::make_unique<Character>();
     player->name = "Player";
-    player->loadModel("../assets/monster_ue5rig.glb");
+    player->loadModel(modelManager, "../assets/monster_ue5rig.glb");
     player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
     player->scale = 1.0f;
 
@@ -155,11 +157,12 @@ namespace moiras
     {
       structureBuilder->setMap(mapPtr);
       structureBuilder->setNavMesh(&mapPtr->navMesh);
+      structureBuilder->setModelManager(&modelManager);
       if (cameraPtr)
       {
         structureBuilder->setCamera(&cameraPtr->rcamera);
       }
-      TraceLog(LOG_INFO, "StructureBuilder configured with Map and NavMesh");
+      TraceLog(LOG_INFO, "StructureBuilder configured with Map, NavMesh and ModelManager");
     }
 
     // Imposta lo shader condiviso per le strutture

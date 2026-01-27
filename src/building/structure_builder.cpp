@@ -25,7 +25,8 @@ StructureBuilder::StructureBuilder()
       m_previewShadersLoaded(false),
       m_previewTexture({0}),
       m_previewRenderTarget({0}),
-      m_previewCamera({0}) {
+      m_previewCamera({0}),
+      m_lastShaderWasValid(true) {
     loadAssetList();
     loadPreviewShaders();
 }
@@ -137,9 +138,13 @@ void StructureBuilder::update() {
 
 void StructureBuilder::draw() {
     if (!m_buildingMode || !m_previewModelLoaded) return;
+    if (m_previewModel.meshCount == 0) return;
 
-    // Applica lo shader appropriato
-    applyPreviewShader(m_isValidPlacement);
+    // Applica lo shader solo se lo stato e' cambiato
+    if (m_isValidPlacement != m_lastShaderWasValid) {
+        applyPreviewShader(m_isValidPlacement);
+        m_lastShaderWasValid = m_isValidPlacement;
+    }
 
     // Calcola la matrice di trasformazione
     Matrix matScale = MatrixScale(m_previewScale, m_previewScale, m_previewScale);
@@ -178,40 +183,39 @@ void StructureBuilder::gui() {
 
 bool StructureBuilder::placeStructure() {
     if (!m_previewModelLoaded || !m_isValidPlacement) return false;
+    if (m_selectedAsset < 0 || m_selectedAsset >= (int)m_assetFiles.size()) return false;
 
     // Crea una nuova struttura
     auto structure = std::make_unique<Structure>();
-    structure->loadModel("../assets/" + m_assetFiles[m_selectedAsset]);
+
+    std::string modelPath = "../assets/" + m_assetFiles[m_selectedAsset];
+    structure->loadModel(modelPath);
+
+    // Verifica che il modello sia stato caricato correttamente
+    if (structure->model.meshCount == 0) {
+        TraceLog(LOG_ERROR, "Failed to load structure model: %s", modelPath.c_str());
+        return false;
+    }
+
     structure->position = m_previewPosition;
     structure->eulerRot = {0.0f, m_previewRotationY, 0.0f};
     structure->scale = m_previewScale;
     structure->isPlaced = true;
 
-    // Imposta il nome
+    // Imposta il nome con un contatore per renderlo unico
+    static int structureCounter = 0;
     std::filesystem::path assetPath(m_assetFiles[m_selectedAsset]);
-    structure->name = "Structure_" + assetPath.stem().string();
-
-    // Salva il puntatore prima del move
-    Structure* structPtr = structure.get();
+    structure->name = "Structure_" + assetPath.stem().string() + "_" + std::to_string(structureCounter++);
 
     // Aggiungi alla scena
     GameObject* root = getRoot();
     if (root) {
         root->addChild(std::move(structure));
-        m_placedStructures.push_back(structPtr);
 
-        // Aggiorna il navmesh per includere l'ostacolo
-        if (m_navMesh && m_map) {
-            // Ottieni le coordinate della tile dove e' stata piazzata la struttura
+        // Log info sulla posizione
+        if (m_navMesh) {
             TileCoord tile = m_navMesh->getTileCoordAt(m_previewPosition);
-
-            // Ricostruisci la tile (questo invalidera' l'area dove c'e' la struttura)
-            // Per ora, forziamo un rebuild completo delle tile interessate
-            // In futuro si potrebbe usare un sistema di obstacle piu' sofisticato
-            TraceLog(LOG_INFO, "Structure placed at tile (%d, %d) - NavMesh update needed", tile.x, tile.y);
-
-            // TODO: Implementare addObstacle nel NavMesh per un aggiornamento piu' efficiente
-            // Per ora il navmesh non viene aggiornato automaticamente
+            TraceLog(LOG_INFO, "Structure placed at tile (%d, %d)", tile.x, tile.y);
         }
     }
 
@@ -264,7 +268,12 @@ void StructureBuilder::loadPreviewModel(const std::string& assetPath) {
     m_previewModelLoaded = (m_previewModel.meshCount > 0);
 
     if (m_previewModelLoaded) {
-        TraceLog(LOG_INFO, "Preview model loaded: %s", assetPath.c_str());
+        // Applica lo shader immediatamente dopo il caricamento
+        m_lastShaderWasValid = true;  // Reset per forzare l'applicazione
+        applyPreviewShader(m_isValidPlacement);
+        m_lastShaderWasValid = m_isValidPlacement;
+        TraceLog(LOG_INFO, "Preview model loaded: %s (meshes: %d, materials: %d)",
+                 assetPath.c_str(), m_previewModel.meshCount, m_previewModel.materialCount);
     } else {
         TraceLog(LOG_WARNING, "Failed to load preview model: %s", assetPath.c_str());
     }

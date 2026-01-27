@@ -80,8 +80,8 @@ private:
     RenderTexture2D m_previewRenderTarget;
     Camera3D m_previewCamera;
 
-    // Strutture piazzate
-    std::vector<Structure*> m_placedStructures;
+    // Stato shader applicato (per evitare applicazioni ripetute)
+    bool m_lastShaderWasValid;
 
     // Metodi privati
     void loadAssetList();

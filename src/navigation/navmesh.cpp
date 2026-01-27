@@ -388,42 +388,10 @@ unsigned char* NavMesh::buildTileData(int tileX, int tileY, int& dataSize) {
         pmesh->flags[i] = 1; // Walkable
     }
 
-    // Salva poly mesh per debug (opzionale)
+    // Debug data - store reference to tile coords only (no manual mesh copy)
     TileCoord tc = {tileX, tileY};
-    if (m_tileDebugData.find(tc) != m_tileDebugData.end()) {
-        if (m_tileDebugData[tc].polyMesh) {
-            rcFreePolyMesh(m_tileDebugData[tc].polyMesh);
-        }
-    }
-    // Copia il poly mesh per il debug
-    rcPolyMesh* debugPmesh = rcAllocPolyMesh();
-    if (debugPmesh) {
-        // Copia manuale dei dati essenziali
-        debugPmesh->nverts = pmesh->nverts;
-        debugPmesh->npolys = pmesh->npolys;
-        debugPmesh->nvp = pmesh->nvp;
-        debugPmesh->cs = pmesh->cs;
-        debugPmesh->ch = pmesh->ch;
-        rcVcopy(debugPmesh->bmin, pmesh->bmin);
-        rcVcopy(debugPmesh->bmax, pmesh->bmax);
-
-        debugPmesh->verts = (unsigned short*)malloc(sizeof(unsigned short) * pmesh->nverts * 3);
-        debugPmesh->polys = (unsigned short*)malloc(sizeof(unsigned short) * pmesh->npolys * pmesh->nvp * 2);
-        debugPmesh->flags = (unsigned short*)malloc(sizeof(unsigned short) * pmesh->npolys);
-        debugPmesh->areas = (unsigned char*)malloc(sizeof(unsigned char) * pmesh->npolys);
-
-        if (debugPmesh->verts && debugPmesh->polys && debugPmesh->flags && debugPmesh->areas) {
-            memcpy(debugPmesh->verts, pmesh->verts, sizeof(unsigned short) * pmesh->nverts * 3);
-            memcpy(debugPmesh->polys, pmesh->polys, sizeof(unsigned short) * pmesh->npolys * pmesh->nvp * 2);
-            memcpy(debugPmesh->flags, pmesh->flags, sizeof(unsigned short) * pmesh->npolys);
-            memcpy(debugPmesh->areas, pmesh->areas, sizeof(unsigned char) * pmesh->npolys);
-
-            m_tileDebugData[tc].polyMesh = debugPmesh;
-            m_tileDebugData[tc].meshBuilt = false;
-        } else {
-            rcFreePolyMesh(debugPmesh);
-        }
-    }
+    m_tileDebugData[tc].polyMesh = nullptr;
+    m_tileDebugData[tc].meshBuilt = false;
 
     // 9. Crea dati navmesh per Detour
     dtNavMeshCreateParams params;

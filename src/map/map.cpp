@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <raylib.h>
 #include <raymath.h>
+#include <cstdio>
 
 namespace moiras {
 
@@ -128,77 +129,94 @@ void Map::update() {
 };
 
 void Map::buildNavMesh() {
-    if (model.meshCount > 0) {
-        BoundingBox bounds = GetMeshBoundingBox(model.meshes[0]);
-        float mapWidth = bounds.max.x - bounds.min.x;
-        float mapLength = bounds.max.z - bounds.min.z;
-        float mapSize = fmaxf(mapWidth, mapLength);
+    if (model.meshCount == 0) return;
 
-        TraceLog(LOG_INFO, "Map size: %.1f x %.1f (max: %.1f)", mapWidth, mapLength, mapSize);
+    // Percorso file cache
+    const std::string cacheFile = "../assets/navmesh.bin";
 
-        // Configura parametri adattivi per la dimensione della mappa
-        // Il sistema tiled gestisce automaticamente la suddivisione
-        if (mapSize < 500.0f) {
-            navMesh.m_cellSize = 0.3f;
-            navMesh.m_cellHeight = 0.2f;
-            navMesh.m_agentRadius = 0.6f;
-            navMesh.m_agentMaxClimb = 0.9f;
-            navMesh.m_agentMaxSlope = 45.0f;
-            navMesh.m_minRegionArea = 8.0f;
-            navMesh.m_mergeRegionArea = 20.0f;
-            navMesh.m_tileSize = 32.0f;
-            TraceLog(LOG_INFO, "NavMesh: Using SMALL map parameters (< 500)");
-        } else if (mapSize < 1000.0f) {
-            navMesh.m_cellSize = 0.4f;
-            navMesh.m_cellHeight = 0.3f;
-            navMesh.m_agentRadius = 0.8f;
-            navMesh.m_agentMaxClimb = 1.0f;
-            navMesh.m_agentMaxSlope = 45.0f;
-            navMesh.m_minRegionArea = 10.0f;
-            navMesh.m_mergeRegionArea = 25.0f;
-            navMesh.m_tileSize = 48.0f;
-            TraceLog(LOG_INFO, "NavMesh: Using SMALL-MEDIUM map parameters (500-1000)");
-        } else if (mapSize < 2000.0f) {
-            navMesh.m_cellSize = 0.5f;
-            navMesh.m_cellHeight = 0.3f;
-            navMesh.m_agentRadius = 1.0f;
-            navMesh.m_agentMaxClimb = 1.0f;
-            navMesh.m_agentMaxSlope = 42.0f;
-            navMesh.m_minRegionArea = 12.0f;
-            navMesh.m_mergeRegionArea = 30.0f;
-            navMesh.m_tileSize = 64.0f;
-            TraceLog(LOG_INFO, "NavMesh: Using MEDIUM map parameters (1000-2000)");
-        } else if (mapSize < 4000.0f) {
-            navMesh.m_cellSize = 0.8f;
-            navMesh.m_cellHeight = 0.4f;
-            navMesh.m_agentRadius = 1.5f;
-            navMesh.m_agentMaxClimb = 1.2f;
-            navMesh.m_agentMaxSlope = 40.0f;
-            navMesh.m_minRegionArea = 15.0f;
-            navMesh.m_mergeRegionArea = 35.0f;
-            navMesh.m_tileSize = 128.0f;
-            TraceLog(LOG_INFO, "NavMesh: Using LARGE map parameters (2000-4000)");
-        } else {
-            navMesh.m_cellSize = 1.0f;
-            navMesh.m_cellHeight = 0.5f;
-            navMesh.m_agentRadius = 2.0f;
-            navMesh.m_agentMaxClimb = 1.5f;
-            navMesh.m_agentMaxSlope = 35.0f;
-            navMesh.m_minRegionArea = 20.0f;
-            navMesh.m_mergeRegionArea = 50.0f;
-            navMesh.m_tileSize = 256.0f;
-            TraceLog(LOG_INFO, "NavMesh: Using HUGE map parameters (> 4000)");
+    // Prova a caricare dalla cache
+    if (navMesh.loadFromFile(cacheFile)) {
+        navMeshBuilt = true;
+        TraceLog(LOG_INFO, "NavMesh: Loaded from cache - %d tiles, %d total polygons",
+                 navMesh.getTileCount(), navMesh.getTotalPolygons());
+        return;
+    }
+
+    // Cache non trovata, genera la navmesh
+    BoundingBox bounds = GetMeshBoundingBox(model.meshes[0]);
+    float mapWidth = bounds.max.x - bounds.min.x;
+    float mapLength = bounds.max.z - bounds.min.z;
+    float mapSize = fmaxf(mapWidth, mapLength);
+
+    TraceLog(LOG_INFO, "Map size: %.1f x %.1f (max: %.1f)", mapWidth, mapLength, mapSize);
+
+    // Configura parametri adattivi per la dimensione della mappa
+    // Il sistema tiled gestisce automaticamente la suddivisione
+    if (mapSize < 500.0f) {
+        navMesh.m_cellSize = 0.3f;
+        navMesh.m_cellHeight = 0.2f;
+        navMesh.m_agentRadius = 0.6f;
+        navMesh.m_agentMaxClimb = 0.9f;
+        navMesh.m_agentMaxSlope = 45.0f;
+        navMesh.m_minRegionArea = 8.0f;
+        navMesh.m_mergeRegionArea = 20.0f;
+        navMesh.m_tileSize = 32.0f;
+        TraceLog(LOG_INFO, "NavMesh: Using SMALL map parameters (< 500)");
+    } else if (mapSize < 1000.0f) {
+        navMesh.m_cellSize = 0.4f;
+        navMesh.m_cellHeight = 0.3f;
+        navMesh.m_agentRadius = 0.8f;
+        navMesh.m_agentMaxClimb = 1.0f;
+        navMesh.m_agentMaxSlope = 45.0f;
+        navMesh.m_minRegionArea = 10.0f;
+        navMesh.m_mergeRegionArea = 25.0f;
+        navMesh.m_tileSize = 48.0f;
+        TraceLog(LOG_INFO, "NavMesh: Using SMALL-MEDIUM map parameters (500-1000)");
+    } else if (mapSize < 2000.0f) {
+        navMesh.m_cellSize = 0.5f;
+        navMesh.m_cellHeight = 0.3f;
+        navMesh.m_agentRadius = 1.0f;
+        navMesh.m_agentMaxClimb = 1.0f;
+        navMesh.m_agentMaxSlope = 42.0f;
+        navMesh.m_minRegionArea = 12.0f;
+        navMesh.m_mergeRegionArea = 30.0f;
+        navMesh.m_tileSize = 64.0f;
+        TraceLog(LOG_INFO, "NavMesh: Using MEDIUM map parameters (1000-2000)");
+    } else if (mapSize < 4000.0f) {
+        navMesh.m_cellSize = 0.8f;
+        navMesh.m_cellHeight = 0.4f;
+        navMesh.m_agentRadius = 1.5f;
+        navMesh.m_agentMaxClimb = 1.2f;
+        navMesh.m_agentMaxSlope = 40.0f;
+        navMesh.m_minRegionArea = 15.0f;
+        navMesh.m_mergeRegionArea = 35.0f;
+        navMesh.m_tileSize = 128.0f;
+        TraceLog(LOG_INFO, "NavMesh: Using LARGE map parameters (2000-4000)");
+    } else {
+        navMesh.m_cellSize = 1.0f;
+        navMesh.m_cellHeight = 0.5f;
+        navMesh.m_agentRadius = 2.0f;
+        navMesh.m_agentMaxClimb = 1.5f;
+        navMesh.m_agentMaxSlope = 35.0f;
+        navMesh.m_minRegionArea = 20.0f;
+        navMesh.m_mergeRegionArea = 50.0f;
+        navMesh.m_tileSize = 256.0f;
+        TraceLog(LOG_INFO, "NavMesh: Using HUGE map parameters (> 4000)");
+    }
+
+    // Costruisci la navmesh tiled
+    navMeshBuilt = navMesh.buildTiled(model.meshes[0], model.transform);
+
+    if (navMeshBuilt) {
+        TraceLog(LOG_INFO, "NavMesh: Tiled build SUCCESS - %d tiles, %d total polygons",
+                 navMesh.getTileCount(), navMesh.getTotalPolygons());
+
+        // Salva nella cache
+        if (navMesh.saveToFile(cacheFile)) {
+            TraceLog(LOG_INFO, "NavMesh: Saved to cache file");
         }
-
-        // Costruisci la navmesh tiled
-        navMeshBuilt = navMesh.buildTiled(model.meshes[0], model.transform);
-
-        if (navMeshBuilt) {
-            TraceLog(LOG_INFO, "NavMesh: Tiled build SUCCESS - %d tiles, %d total polygons",
-                     navMesh.getTileCount(), navMesh.getTotalPolygons());
-        } else {
-            TraceLog(LOG_ERROR, "NavMesh: Tiled build FAILED!");
-        }
+    } else {
+        TraceLog(LOG_ERROR, "NavMesh: Tiled build FAILED!");
     }
 }
 
@@ -221,7 +239,8 @@ void Map::gui() {
             ImGui::TextColored(ImVec4(0, 1, 0, 1), "Status: Ready");
             ImGui::Text("Tiles: %d", navMesh.getTileCount());
             ImGui::Text("Total Polygons: %d", navMesh.getTotalPolygons());
-            ImGui::Checkbox("Show Debug", &showNavMeshDebug);
+            ImGui::Checkbox("Show NavMesh Debug", &showNavMeshDebug);
+            ImGui::Checkbox("Show Path", &showPath);
         } else {
             ImGui::TextColored(ImVec4(1, 0, 0, 1), "Status: Not Built");
 
@@ -241,7 +260,13 @@ void Map::gui() {
         ImGui::SliderFloat("Max Climb", &navMesh.m_agentMaxClimb, 0.1f, 5.0f);
         ImGui::SliderFloat("Max Slope", &navMesh.m_agentMaxSlope, 15.0f, 75.0f);
         ImGui::Spacing();
-        if (ImGui::Button("Rebuild NavMesh")) {
+
+        if (ImGui::Button("Rebuild NavMesh (Clear Cache)")) {
+            // Elimina il file cache
+            const std::string cacheFile = "../assets/navmesh.bin";
+            std::remove(cacheFile.c_str());
+            TraceLog(LOG_INFO, "NavMesh: Cache file deleted");
+
             double startTime = GetTime();
             navMeshBuilt = false;
             buildNavMesh();

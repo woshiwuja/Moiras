@@ -221,7 +221,8 @@ namespace moiras
       }
 
       // Draw player controller debug (path, waypoints, target)
-      if (playerController)
+      // Visibile sempre (non legato a showNavMeshDebug)
+      if (playerController && map && map->showPath)
       {
         playerController->drawDebug();
       }

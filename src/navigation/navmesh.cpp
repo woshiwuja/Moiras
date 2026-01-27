@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <fstream>
 
 namespace moiras {
 
@@ -634,7 +635,12 @@ bool NavMesh::projectPointToNavMesh(Vector3 point, Vector3& projectedPoint) {
 }
 
 void NavMesh::buildDebugMesh() {
-    if (m_tileDebugData.empty()) return;
+    // Usa il nuovo metodo che legge direttamente da dtNavMesh
+    buildDebugMeshFromNavMesh();
+}
+
+void NavMesh::buildDebugMeshFromNavMesh() {
+    if (!m_navMesh) return;
 
     std::vector<Vector3> allVertices;
     std::vector<unsigned short> allIndices;
@@ -651,26 +657,30 @@ void NavMesh::buildDebugMesh() {
     };
     int numColors = sizeof(tileColors) / sizeof(tileColors[0]);
 
+    // Itera su tutte le tile della dtNavMesh
+    int maxTiles = m_navMesh->getMaxTiles();
     int colorIndex = 0;
-    for (auto& pair : m_tileDebugData) {
-        rcPolyMesh* pmesh = pair.second.polyMesh;
-        if (!pmesh || pmesh->npolys == 0) continue;
+
+    for (int i = 0; i < maxTiles; i++) {
+        const dtMeshTile* tile = m_navMesh->getTile(i);
+        if (!tile || !tile->header) continue;
 
         Color tileColor = tileColors[colorIndex % numColors];
         colorIndex++;
 
-        for (int i = 0; i < pmesh->npolys; i++) {
-            const unsigned short* p = &pmesh->polys[i * pmesh->nvp * 2];
+        // Itera su tutti i poligoni della tile
+        for (int j = 0; j < tile->header->polyCount; j++) {
+            const dtPoly* poly = &tile->polys[j];
 
+            // Skip off-mesh connections
+            if (poly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION) continue;
+
+            // Estrai i vertici del poligono
             std::vector<Vector3> polyVerts;
-            for (int j = 0; j < pmesh->nvp; j++) {
-                if (p[j] == RC_MESH_NULL_IDX) break;
-
-                const unsigned short* v = &pmesh->verts[p[j] * 3];
-                float x = pmesh->bmin[0] + v[0] * pmesh->cs;
-                float y = pmesh->bmin[1] + (v[1] + 1) * pmesh->ch + 0.2f;
-                float z = pmesh->bmin[2] + v[2] * pmesh->cs;
-                polyVerts.push_back({x, y, z});
+            for (int k = 0; k < poly->vertCount; k++) {
+                const float* v = &tile->verts[poly->verts[k] * 3];
+                // Alza leggermente per la visualizzazione
+                polyVerts.push_back({v[0], v[1] + 0.2f, v[2]});
             }
 
             if (polyVerts.size() >= 3) {
@@ -681,16 +691,20 @@ void NavMesh::buildDebugMesh() {
                     allColors.push_back(tileColor);
                 }
 
-                for (size_t j = 1; j < polyVerts.size() - 1; j++) {
+                // Triangola il poligono (fan triangulation)
+                for (size_t k = 1; k < polyVerts.size() - 1; k++) {
                     allIndices.push_back(baseIndex);
-                    allIndices.push_back(baseIndex + j);
-                    allIndices.push_back(baseIndex + j + 1);
+                    allIndices.push_back(baseIndex + k);
+                    allIndices.push_back(baseIndex + k + 1);
                 }
             }
         }
     }
 
-    if (allVertices.empty()) return;
+    if (allVertices.empty()) {
+        TraceLog(LOG_WARNING, "NavMesh: No polygons found for debug mesh");
+        return;
+    }
 
     // Cleanup vecchio model
     if (m_debugModel.meshCount > 0) {
@@ -725,8 +739,8 @@ void NavMesh::buildDebugMesh() {
     m_debugModel = LoadModelFromMesh(debugMesh);
     m_debugMeshBuilt = true;
 
-    TraceLog(LOG_INFO, "NavMesh: Debug mesh built with %d vertices, %d triangles from %d tiles",
-             (int)allVertices.size(), (int)allIndices.size() / 3, (int)m_tileDebugData.size());
+    TraceLog(LOG_INFO, "NavMesh: Debug mesh built with %d vertices, %d triangles",
+             (int)allVertices.size(), (int)allIndices.size() / 3);
 }
 
 void NavMesh::drawDebug() {
@@ -740,6 +754,197 @@ void NavMesh::drawDebug() {
         DrawModel(m_debugModel, {0, 0, 0}, 1.0f, WHITE);
         rlEnableBackfaceCulling();
     }
+}
+
+// Header per il file binario navmesh
+static const int NAVMESH_FILE_MAGIC = 'NMSH';
+static const int NAVMESH_FILE_VERSION = 1;
+
+bool NavMesh::saveToFile(const std::string& filename) {
+    if (!m_navMesh) {
+        TraceLog(LOG_ERROR, "NavMesh: Cannot save - navmesh not built");
+        return false;
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        TraceLog(LOG_ERROR, "NavMesh: Cannot open file for writing: %s", filename.c_str());
+        return false;
+    }
+
+    // Scrivi header
+    file.write(reinterpret_cast<const char*>(&NAVMESH_FILE_MAGIC), sizeof(int));
+    file.write(reinterpret_cast<const char*>(&NAVMESH_FILE_VERSION), sizeof(int));
+
+    // Scrivi parametri navmesh
+    const dtNavMeshParams* params = m_navMesh->getParams();
+    file.write(reinterpret_cast<const char*>(params), sizeof(dtNavMeshParams));
+
+    // Scrivi bounds
+    file.write(reinterpret_cast<const char*>(m_boundsMin), sizeof(float) * 3);
+    file.write(reinterpret_cast<const char*>(m_boundsMax), sizeof(float) * 3);
+
+    // Scrivi numero di tiles
+    int maxTiles = m_navMesh->getMaxTiles();
+    int numTiles = 0;
+
+    // Conta tiles valide
+    for (int i = 0; i < maxTiles; i++) {
+        const dtMeshTile* tile = m_navMesh->getTile(i);
+        if (tile && tile->header && tile->dataSize > 0) {
+            numTiles++;
+        }
+    }
+
+    file.write(reinterpret_cast<const char*>(&numTiles), sizeof(int));
+
+    // Scrivi ogni tile
+    for (int i = 0; i < maxTiles; i++) {
+        const dtMeshTile* tile = m_navMesh->getTile(i);
+        if (!tile || !tile->header || tile->dataSize <= 0) continue;
+
+        // Scrivi tile reference
+        dtTileRef tileRef = m_navMesh->getTileRef(tile);
+        file.write(reinterpret_cast<const char*>(&tileRef), sizeof(dtTileRef));
+
+        // Scrivi dimensione dati tile
+        int dataSize = tile->dataSize;
+        file.write(reinterpret_cast<const char*>(&dataSize), sizeof(int));
+
+        // Scrivi dati tile
+        file.write(reinterpret_cast<const char*>(tile->data), dataSize);
+    }
+
+    file.close();
+
+    TraceLog(LOG_INFO, "NavMesh: Saved to %s (%d tiles)", filename.c_str(), numTiles);
+    return true;
+}
+
+bool NavMesh::loadFromFile(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        TraceLog(LOG_INFO, "NavMesh: Cache file not found: %s", filename.c_str());
+        return false;
+    }
+
+    // Leggi e verifica header
+    int magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(int));
+    file.read(reinterpret_cast<char*>(&version), sizeof(int));
+
+    if (magic != NAVMESH_FILE_MAGIC) {
+        TraceLog(LOG_ERROR, "NavMesh: Invalid file format");
+        file.close();
+        return false;
+    }
+
+    if (version != NAVMESH_FILE_VERSION) {
+        TraceLog(LOG_WARNING, "NavMesh: Version mismatch (file: %d, expected: %d)", version, NAVMESH_FILE_VERSION);
+        file.close();
+        return false;
+    }
+
+    // Leggi parametri navmesh
+    dtNavMeshParams params;
+    file.read(reinterpret_cast<char*>(&params), sizeof(dtNavMeshParams));
+
+    // Leggi bounds
+    file.read(reinterpret_cast<char*>(m_boundsMin), sizeof(float) * 3);
+    file.read(reinterpret_cast<char*>(m_boundsMax), sizeof(float) * 3);
+
+    // Cleanup navmesh esistente
+    if (m_navMesh) {
+        dtFreeNavMesh(m_navMesh);
+        m_navMesh = nullptr;
+    }
+
+    // Crea nuova navmesh
+    m_navMesh = dtAllocNavMesh();
+    if (!m_navMesh) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate navmesh");
+        file.close();
+        return false;
+    }
+
+    dtStatus status = m_navMesh->init(&params);
+    if (dtStatusFailed(status)) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to init navmesh from file");
+        dtFreeNavMesh(m_navMesh);
+        m_navMesh = nullptr;
+        file.close();
+        return false;
+    }
+
+    // Init query
+    status = m_navQuery->init(m_navMesh, 2048);
+    if (dtStatusFailed(status)) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to init navmesh query");
+        dtFreeNavMesh(m_navMesh);
+        m_navMesh = nullptr;
+        file.close();
+        return false;
+    }
+
+    // Leggi numero di tiles
+    int numTiles;
+    file.read(reinterpret_cast<char*>(&numTiles), sizeof(int));
+
+    m_tileCount = 0;
+    m_totalPolygons = 0;
+
+    // Leggi ogni tile
+    for (int i = 0; i < numTiles; i++) {
+        // Leggi tile reference (non usata per l'aggiunta)
+        dtTileRef tileRef;
+        file.read(reinterpret_cast<char*>(&tileRef), sizeof(dtTileRef));
+
+        // Leggi dimensione dati
+        int dataSize;
+        file.read(reinterpret_cast<char*>(&dataSize), sizeof(int));
+
+        if (dataSize <= 0) {
+            TraceLog(LOG_WARNING, "NavMesh: Invalid tile data size");
+            continue;
+        }
+
+        // Alloca e leggi dati tile
+        unsigned char* data = (unsigned char*)dtAlloc(dataSize, DT_ALLOC_PERM);
+        if (!data) {
+            TraceLog(LOG_ERROR, "NavMesh: Failed to allocate tile data");
+            continue;
+        }
+
+        file.read(reinterpret_cast<char*>(data), dataSize);
+
+        // Aggiungi tile
+        dtTileRef resultRef;
+        status = m_navMesh->addTile(data, dataSize, DT_TILE_FREE_DATA, 0, &resultRef);
+        if (dtStatusFailed(status)) {
+            dtFree(data);
+            TraceLog(LOG_WARNING, "NavMesh: Failed to add tile %d", i);
+            continue;
+        }
+
+        m_tileCount++;
+
+        // Conta poligoni
+        const dtMeshTile* tile = m_navMesh->getTileByRef(resultRef);
+        if (tile && tile->header) {
+            m_totalPolygons += tile->header->polyCount;
+        }
+    }
+
+    file.close();
+
+    // Reset debug mesh
+    m_debugMeshBuilt = false;
+    cleanupTileDebugData();
+
+    TraceLog(LOG_INFO, "NavMesh: Loaded from %s (%d tiles, %d polygons)",
+             filename.c_str(), m_tileCount, m_totalPolygons);
+
+    return m_tileCount > 0;
 }
 
 } // namespace moiras

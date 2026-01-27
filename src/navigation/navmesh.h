@@ -6,6 +6,7 @@
 #include <raylib.h>
 #include <vector>
 #include <unordered_map>
+#include <string>
 
 #include <raymath.h>
 namespace moiras {
@@ -55,6 +56,10 @@ public:
 
   // Debug
   void drawDebug();
+
+  // Salvataggio/caricamento binario
+  bool saveToFile(const std::string& filename);
+  bool loadFromFile(const std::string& filename);
 
   // Proietta un punto sulla navmesh
   bool projectPointToNavMesh(Vector3 point, Vector3& projectedPoint);
@@ -144,6 +149,7 @@ private:
   bool initNavMesh();
   unsigned char* buildTileData(int tileX, int tileY, int& dataSize);
   void buildDebugMesh();
+  void buildDebugMeshFromNavMesh();  // Costruisce debug mesh da dtNavMesh
   void buildDebugMeshForTile(int tileX, int tileY, rcPolyMesh* pmesh);
   void cleanupTileDebugData();
 };

@@ -52,12 +52,12 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
     cfg.walkableClimb = (int)floorf(m_agentMaxClimb / cfg.ch);
     cfg.walkableRadius = (int)ceilf(m_agentRadius / cfg.cs);
     cfg.maxEdgeLen = (int)(12.0f / cfg.cs);
-    cfg.maxSimplificationError = 1.5f;           // Era 1.3f - più tolleranza per mappe grandi
-    cfg.minRegionArea = (int)rcSqr(12.0f);      // Era 8.0f (64) - ora 144 per filtrare regioni piccole
-    cfg.mergeRegionArea = (int)rcSqr(30.0f);    // Era 20.0f (400) - ora 900 per merge migliore
+    cfg.maxSimplificationError = 2.0f;           // Era 1.3f - MOLTA tolleranza per ridurre poligoni
+    cfg.minRegionArea = (int)rcSqr(20.0f);      // Era 8.0f (64) - ora 400 per filtrare aggressivamente
+    cfg.mergeRegionArea = (int)rcSqr(50.0f);    // Era 20.0f (400) - ora 2500 per merge aggressivo
     cfg.maxVertsPerPoly = 6;
     cfg.detailSampleDist = cfg.cs * 6.0f;
-    cfg.detailSampleMaxError = cfg.ch * 1.5f;    // Era 1.0f - più tolleranza
+    cfg.detailSampleMaxError = cfg.ch * 2.0f;    // Era 1.0f - MOLTA tolleranza
 
     // 2. Calcolo Bounding Box
     float bmin[3], bmax[3];
@@ -215,6 +215,19 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
         pmesh->flags[i] = 1;  // Walkable
     }
 
+    TraceLog(LOG_INFO, "NavMesh: PolyMesh created - Vertices: %d, Polygons: %d",
+             pmesh->nverts, pmesh->npolys);
+    TraceLog(LOG_INFO, "NavMesh: DetailMesh - Vertices: %d, Triangles: %d",
+             dmesh->nverts, dmesh->ntris);
+
+    // Check per limiti di Detour
+    if (pmesh->nverts > 60000) {
+        TraceLog(LOG_WARNING, "NavMesh: Troppi vertici (%d > 60000), potrebbe fallire!", pmesh->nverts);
+    }
+    if (pmesh->npolys > 32000) {
+        TraceLog(LOG_WARNING, "NavMesh: Troppi poligoni (%d > 32000), potrebbe fallire!", pmesh->npolys);
+    }
+
     // 11. Creazione NavMesh Data per Detour
     dtNavMeshCreateParams params;
     memset(&params, 0, sizeof(params));
@@ -241,9 +254,13 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
 
     unsigned char* navData = nullptr;
     int navDataSize = 0;
-    
+
     if (!dtCreateNavMeshData(&params, &navData, &navDataSize)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to create Detour navmesh data");
+        TraceLog(LOG_ERROR, "NavMesh: Failed to create Detour navmesh data!");
+        TraceLog(LOG_ERROR, "NavMesh: Cause probabili:");
+        TraceLog(LOG_ERROR, "  - Troppi vertici (%d) o poligoni (%d)", pmesh->nverts, pmesh->npolys);
+        TraceLog(LOG_ERROR, "  - Grid troppo grande (%d x %d)", cfg.width, cfg.height);
+        TraceLog(LOG_ERROR, "NavMesh: SOLUZIONE: Aumenta cellSize in map.cpp o usa una mappa più piccola");
         rcFreePolyMesh(pmesh);
         rcFreePolyMeshDetail(dmesh);
         return false;

@@ -24,14 +24,14 @@ public:
   // Configura parametri per mappe di diverse dimensioni
   void setParametersForMapSize(float mapSize);
 
-  // Parametri configurabili per mappe grandi (4000x4000)
-  // Aumentati per performance e gestione migliore delle pendenze
-  float m_cellSize = 0.3f;           // Era 0.1f - riduce celle di 9x per performance
-  float m_cellHeight = 0.3f;         // Era 0.2f - migliore risoluzione verticale
+  // Parametri configurabili (ottimizzati per mappe 1000-4000 unità)
+  // Valori di default conservativi per evitare overflow
+  float m_cellSize = 0.5f;           // Default moderato (sovrascritto da map.cpp)
+  float m_cellHeight = 0.3f;         // Risoluzione verticale
   float m_agentHeight = 2.0f;
-  float m_agentRadius = 0.6f;        // Era 0.3f - più realistico per character
-  float m_agentMaxClimb = 0.9f;      // Era 2.9f - più realistico (90cm)
-  float m_agentMaxSlope = 45.0f;     // Era 65.0f - pendenze camminabili realistiche
+  float m_agentRadius = 0.8f;        // Radius realistico per character umani
+  float m_agentMaxClimb = 1.0f;      // 1 metro di salto
+  float m_agentMaxSlope = 40.0f;     // Pendenze camminabili (40°)
 
 
 private:

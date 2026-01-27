@@ -5,54 +5,147 @@
 #include "Recast.h"
 #include <raylib.h>
 #include <vector>
+#include <unordered_map>
 
 #include <raymath.h>
 namespace moiras {
+
+// Struttura per identificare una tile
+struct TileCoord {
+  int x;
+  int y;
+
+  bool operator==(const TileCoord& other) const {
+    return x == other.x && y == other.y;
+  }
+};
+
+// Hash per TileCoord
+struct TileCoordHash {
+  std::size_t operator()(const TileCoord& tc) const {
+    return std::hash<int>()(tc.x) ^ (std::hash<int>()(tc.y) << 16);
+  }
+};
 
 class NavMesh {
 public:
   NavMesh();
   ~NavMesh();
 
+  // Build monolitico (legacy - ora chiama buildTiled internamente)
   bool build(const Mesh &mesh, Matrix transform = MatrixIdentity());
+
+  // Build tiled - divide la mesh in tile e le costruisce
+  bool buildTiled(const Mesh &mesh, Matrix transform = MatrixIdentity());
+
+  // Costruisce una singola tile
+  bool buildTile(int tileX, int tileY);
+
+  // Rimuove una tile
+  bool removeTile(int tileX, int tileY);
+
+  // Ricostruisce una tile (utile per aggiornamenti dinamici)
+  bool rebuildTile(int tileX, int tileY);
+
+  // Ottiene le coordinate tile da una posizione world
+  TileCoord getTileCoordAt(Vector3 worldPos) const;
+
+  // Pathfinding
   std::vector<Vector3> findPath(Vector3 start, Vector3 end);
+
+  // Debug
   void drawDebug();
 
-  // Proietta un punto sulla navmesh (trova il punto più vicino sulla navmesh)
+  // Proietta un punto sulla navmesh
   bool projectPointToNavMesh(Vector3 point, Vector3& projectedPoint);
 
   // Configura parametri per mappe di diverse dimensioni
   void setParametersForMapSize(float mapSize);
 
-  // Parametri configurabili (ottimizzati per mappe 1000-4000 unità)
-  // Valori di default conservativi per evitare overflow
-  float m_cellSize = 0.5f;           // Default moderato (sovrascritto da map.cpp)
-  float m_cellHeight = 0.3f;         // Risoluzione verticale
+  // ============================================
+  // Parametri navmesh
+  // ============================================
+
+  // Parametri celle
+  float m_cellSize = 0.5f;
+  float m_cellHeight = 0.3f;
+
+  // Parametri agente
   float m_agentHeight = 2.0f;
-  float m_agentRadius = 0.8f;        // Radius realistico per character umani
-  float m_agentMaxClimb = 1.0f;      // 1 metro di salto
-  float m_agentMaxSlope = 40.0f;     // Pendenze camminabili (40°)
+  float m_agentRadius = 0.8f;
+  float m_agentMaxClimb = 1.0f;
+  float m_agentMaxSlope = 40.0f;
 
-  // Parametri di filtraggio regioni (adattati per dimensione mappa)
-  float m_minRegionArea = 8.0f;      // Minima area regione (default conservativo)
-  float m_mergeRegionArea = 20.0f;   // Area per merge regioni
-  float m_maxSimplificationError = 1.3f;  // Tolleranza semplificazione
+  // Parametri filtraggio regioni
+  float m_minRegionArea = 8.0f;
+  float m_mergeRegionArea = 20.0f;
+  float m_maxSimplificationError = 1.3f;
 
+  // ============================================
+  // Parametri tiling
+  // ============================================
+
+  // Dimensione di ogni tile in world units
+  float m_tileSize = 64.0f;
+
+  // Numero massimo di tile (per allocazione navmesh)
+  int m_maxTiles = 1024;
+
+  // Numero massimo di poligoni per tile
+  int m_maxPolysPerTile = 4096;
+
+  // Statistiche
+  int getTileCount() const { return m_tileCount; }
+  int getTotalPolygons() const { return m_totalPolygons; }
+
+  // Accesso al bounding box
+  void getBounds(float* bmin, float* bmax) const;
 
 private:
   rcContext *m_ctx;
   dtNavMesh *m_navMesh;
   dtNavMeshQuery *m_navQuery;
 
-  // Per debug drawing
-  rcPolyMesh *m_polyMesh = nullptr;
-  rcPolyMeshDetail *m_polyMeshDetail = nullptr;
+  // Dati della mesh originale (per rebuild delle tile)
+  std::vector<float> m_storedVerts;
+  std::vector<int> m_storedTris;
+  int m_storedVertCount = 0;
+  int m_storedTriCount = 0;
 
-  // Debug mesh pre-generata
+  // Bounding box totale
+  float m_boundsMin[3] = {0, 0, 0};
+  float m_boundsMax[3] = {0, 0, 0};
+
+  // Configurazione Recast salvata
+  rcConfig m_cfg;
+
+  // Numero tile in ogni direzione
+  int m_tilesX = 0;
+  int m_tilesZ = 0;
+
+  // Statistiche tile
+  int m_tileCount = 0;
+  int m_totalPolygons = 0;
+
+  // Per debug drawing - una mesh per tile
+  struct TileDebugData {
+    rcPolyMesh* polyMesh = nullptr;
+    Model debugModel = {0};
+    bool meshBuilt = false;
+  };
+
+  std::unordered_map<TileCoord, TileDebugData, TileCoordHash> m_tileDebugData;
+
+  // Debug mesh globale (combinata)
   Model m_debugModel = {0};
   bool m_debugMeshBuilt = false;
 
+  // Metodi privati
+  bool initNavMesh();
+  unsigned char* buildTileData(int tileX, int tileY, int& dataSize);
   void buildDebugMesh();
+  void buildDebugMeshForTile(int tileX, int tileY, rcPolyMesh* pmesh);
+  void cleanupTileDebugData();
 };
 
 } // namespace moiras

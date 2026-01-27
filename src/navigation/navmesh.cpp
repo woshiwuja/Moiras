@@ -1,5 +1,5 @@
 #include "navmesh.h"
-	#include <rlgl.h>
+#include <rlgl.h>
 #include "DetourNavMeshBuilder.h"
 #include <cmath>
 #include <cstring>
@@ -10,227 +10,422 @@ namespace moiras {
 NavMesh::NavMesh() : m_ctx(nullptr), m_navMesh(nullptr), m_navQuery(nullptr) {
     m_ctx = new rcContext();
     m_navQuery = dtAllocNavMeshQuery();
+    memset(&m_cfg, 0, sizeof(m_cfg));
 }
 
 NavMesh::~NavMesh() {
+    cleanupTileDebugData();
     if (m_navMesh) dtFreeNavMesh(m_navMesh);
     if (m_navQuery) dtFreeNavMeshQuery(m_navQuery);
+    if (m_debugModel.meshCount > 0) {
+        UnloadModel(m_debugModel);
+    }
     delete m_ctx;
 }
 
+void NavMesh::cleanupTileDebugData() {
+    for (auto& pair : m_tileDebugData) {
+        if (pair.second.polyMesh) {
+            rcFreePolyMesh(pair.second.polyMesh);
+        }
+        if (pair.second.debugModel.meshCount > 0) {
+            UnloadModel(pair.second.debugModel);
+        }
+    }
+    m_tileDebugData.clear();
+}
+
+void NavMesh::getBounds(float* bmin, float* bmax) const {
+    if (bmin) {
+        bmin[0] = m_boundsMin[0];
+        bmin[1] = m_boundsMin[1];
+        bmin[2] = m_boundsMin[2];
+    }
+    if (bmax) {
+        bmax[0] = m_boundsMax[0];
+        bmax[1] = m_boundsMax[1];
+        bmax[2] = m_boundsMax[2];
+    }
+}
+
+TileCoord NavMesh::getTileCoordAt(Vector3 worldPos) const {
+    TileCoord tc;
+    tc.x = (int)floorf((worldPos.x - m_boundsMin[0]) / m_tileSize);
+    tc.y = (int)floorf((worldPos.z - m_boundsMin[2]) / m_tileSize);
+    return tc;
+}
+
+// Build legacy - ora usa buildTiled internamente
 bool NavMesh::build(const Mesh& mesh, Matrix transform) {
+    return buildTiled(mesh, transform);
+}
+
+bool NavMesh::initNavMesh() {
+    // Pulisci navmesh esistente
+    if (m_navMesh) {
+        dtFreeNavMesh(m_navMesh);
+        m_navMesh = nullptr;
+    }
+
+    m_navMesh = dtAllocNavMesh();
+    if (!m_navMesh) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate navmesh");
+        return false;
+    }
+
+    // Parametri per navmesh tiled
+    dtNavMeshParams params;
+    memset(&params, 0, sizeof(params));
+    rcVcopy(params.orig, m_boundsMin);
+    params.tileWidth = m_tileSize;
+    params.tileHeight = m_tileSize;
+    params.maxTiles = m_maxTiles;
+    params.maxPolys = m_maxPolysPerTile;
+
+    dtStatus status = m_navMesh->init(&params);
+    if (dtStatusFailed(status)) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to init tiled navmesh");
+        return false;
+    }
+
+    // Init query
+    status = m_navQuery->init(m_navMesh, 2048);
+    if (dtStatusFailed(status)) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to init navmesh query");
+        return false;
+    }
+
+    return true;
+}
+
+bool NavMesh::buildTiled(const Mesh& mesh, Matrix transform) {
     if (mesh.vertexCount == 0) {
         TraceLog(LOG_ERROR, "NavMesh: Mesh has no vertices");
         return false;
     }
 
-    TraceLog(LOG_INFO, "NavMesh: Building from mesh with %d vertices, %d triangles", 
+    TraceLog(LOG_INFO, "NavMesh: Building TILED navmesh from mesh with %d vertices, %d triangles",
              mesh.vertexCount, mesh.triangleCount);
 
-    // Trasforma i vertici
-    std::vector<float> transformedVerts(mesh.vertexCount * 3);
+    // Cleanup precedente
+    cleanupTileDebugData();
+    m_debugMeshBuilt = false;
+    m_tileCount = 0;
+    m_totalPolygons = 0;
+
+    // Trasforma e salva i vertici
+    m_storedVertCount = mesh.vertexCount;
+    m_storedTriCount = mesh.triangleCount;
+    m_storedVerts.resize(mesh.vertexCount * 3);
+
     for (int i = 0; i < mesh.vertexCount; i++) {
         Vector3 v = {
             mesh.vertices[i * 3 + 0],
             mesh.vertices[i * 3 + 1],
             mesh.vertices[i * 3 + 2]
         };
-        
-        // Applica la trasformazione
         v = Vector3Transform(v, transform);
-        
-        transformedVerts[i * 3 + 0] = v.x;
-        transformedVerts[i * 3 + 1] = v.y;
-        transformedVerts[i * 3 + 2] = v.z;
+        m_storedVerts[i * 3 + 0] = v.x;
+        m_storedVerts[i * 3 + 1] = v.y;
+        m_storedVerts[i * 3 + 2] = v.z;
     }
-    rcConfig cfg;
-    memset(&cfg, 0, sizeof(cfg));
-    cfg.cs = m_cellSize;
-    cfg.ch = m_cellHeight;
-    cfg.walkableSlopeAngle = m_agentMaxSlope;
-    cfg.walkableHeight = (int)ceilf(m_agentHeight / cfg.ch);
-    cfg.walkableClimb = (int)floorf(m_agentMaxClimb / cfg.ch);
-    cfg.walkableRadius = (int)ceilf(m_agentRadius / cfg.cs);
-    cfg.maxEdgeLen = (int)(12.0f / cfg.cs);
-    cfg.maxSimplificationError = m_maxSimplificationError;
-    cfg.minRegionArea = (int)rcSqr(m_minRegionArea);
-    cfg.mergeRegionArea = (int)rcSqr(m_mergeRegionArea);
-    cfg.maxVertsPerPoly = 6;
-    cfg.detailSampleDist = cfg.cs * 6.0f;
-    cfg.detailSampleMaxError = cfg.ch * 1.0f;
 
-    // 2. Calcolo Bounding Box
-    float bmin[3], bmax[3];
-    rcCalcBounds(transformedVerts.data(), mesh.vertexCount, bmin, bmax);
-    rcVcopy(cfg.bmin, bmin);
-    rcVcopy(cfg.bmax, bmax);
-    rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
-
-    TraceLog(LOG_INFO, "NavMesh: Bounding box: (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
-             bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
-    TraceLog(LOG_INFO, "NavMesh: Map dimensions: %.2f x %.2f x %.2f",
-             bmax[0]-bmin[0], bmax[1]-bmin[1], bmax[2]-bmin[2]);
-    TraceLog(LOG_INFO, "NavMesh: Grid size %d x %d (total cells: %d)",
-             cfg.width, cfg.height, cfg.width * cfg.height);
-    TraceLog(LOG_INFO, "NavMesh: Cell size: %.2f, Cell height: %.2f", cfg.cs, cfg.ch);
-    TraceLog(LOG_INFO, "NavMesh: Agent - Height: %.2f, Radius: %.2f, MaxClimb: %.2f, MaxSlope: %.2f°",
-             m_agentHeight, m_agentRadius, m_agentMaxClimb, m_agentMaxSlope);
-    TraceLog(LOG_INFO, "NavMesh: Filtering - MinRegion: %.0f² (=%d cells), MergeRegion: %.0f² (=%d cells), SimplificationError: %.2f",
-             m_minRegionArea, cfg.minRegionArea, m_mergeRegionArea, cfg.mergeRegionArea, m_maxSimplificationError);
-
-    // 3. Conversione Indici
-    int triCount = mesh.triangleCount;
-    std::vector<int> tris(triCount * 3);
-    
+    // Salva gli indici
+    m_storedTris.resize(m_storedTriCount * 3);
     if (mesh.indices != nullptr) {
-        for (int i = 0; i < triCount * 3; i++) {
-            tris[i] = (int)mesh.indices[i];
+        for (int i = 0; i < m_storedTriCount * 3; i++) {
+            m_storedTris[i] = (int)mesh.indices[i];
         }
     } else {
-        // Se non ci sono indici, usa i vertici in ordine
-        for (int i = 0; i < triCount * 3; i++) {
-            tris[i] = i;
+        for (int i = 0; i < m_storedTriCount * 3; i++) {
+            m_storedTris[i] = i;
         }
     }
 
-    // 4. Voxelizzazione
-    rcHeightfield* hf = rcAllocHeightfield();
-    if (!hf) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate heightfield");
-        return false;
+    // Calcola il bounding box totale
+    rcCalcBounds(m_storedVerts.data(), m_storedVertCount, m_boundsMin, m_boundsMax);
+
+    float mapWidth = m_boundsMax[0] - m_boundsMin[0];
+    float mapLength = m_boundsMax[2] - m_boundsMin[2];
+
+    TraceLog(LOG_INFO, "NavMesh: Bounding box: (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
+             m_boundsMin[0], m_boundsMin[1], m_boundsMin[2],
+             m_boundsMax[0], m_boundsMax[1], m_boundsMax[2]);
+    TraceLog(LOG_INFO, "NavMesh: Map dimensions: %.2f x %.2f", mapWidth, mapLength);
+
+    // Calcola la dimensione ottimale delle tile
+    // Ogni tile dovrebbe avere una grid di circa 64-128 celle per lato per buone performance
+    float targetCellsPerTile = 128.0f;
+    m_tileSize = targetCellsPerTile * m_cellSize;
+
+    // Clamp tile size tra 32 e 256 unità
+    m_tileSize = fmaxf(32.0f, fminf(256.0f, m_tileSize));
+
+    // Calcola numero di tile
+    m_tilesX = (int)ceilf(mapWidth / m_tileSize);
+    m_tilesZ = (int)ceilf(mapLength / m_tileSize);
+
+    // Assicurati di avere almeno 1 tile
+    m_tilesX = (m_tilesX < 1) ? 1 : m_tilesX;
+    m_tilesZ = (m_tilesZ < 1) ? 1 : m_tilesZ;
+
+    // Aggiorna maxTiles se necessario
+    int totalTiles = m_tilesX * m_tilesZ;
+    if (totalTiles > m_maxTiles) {
+        m_maxTiles = totalTiles + 16; // Margine extra
     }
-    
-    if (!rcCreateHeightfield(m_ctx, *hf, cfg.width, cfg.height, cfg.bmin, cfg.bmax, cfg.cs, cfg.ch)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to create heightfield");
-        rcFreeHeightField(hf);
+
+    TraceLog(LOG_INFO, "NavMesh: Tile size: %.2f, Grid: %d x %d tiles (total: %d)",
+             m_tileSize, m_tilesX, m_tilesZ, totalTiles);
+
+    // Setup configurazione Recast base
+    memset(&m_cfg, 0, sizeof(m_cfg));
+    m_cfg.cs = m_cellSize;
+    m_cfg.ch = m_cellHeight;
+    m_cfg.walkableSlopeAngle = m_agentMaxSlope;
+    m_cfg.walkableHeight = (int)ceilf(m_agentHeight / m_cfg.ch);
+    m_cfg.walkableClimb = (int)floorf(m_agentMaxClimb / m_cfg.ch);
+    m_cfg.walkableRadius = (int)ceilf(m_agentRadius / m_cfg.cs);
+    m_cfg.maxEdgeLen = (int)(12.0f / m_cfg.cs);
+    m_cfg.maxSimplificationError = m_maxSimplificationError;
+    m_cfg.minRegionArea = (int)rcSqr(m_minRegionArea);
+    m_cfg.mergeRegionArea = (int)rcSqr(m_mergeRegionArea);
+    m_cfg.maxVertsPerPoly = 6;
+    m_cfg.detailSampleDist = m_cfg.cs * 6.0f;
+    m_cfg.detailSampleMaxError = m_cfg.ch * 1.0f;
+    // Tile size in celle
+    m_cfg.tileSize = (int)(m_tileSize / m_cfg.cs);
+    m_cfg.borderSize = m_cfg.walkableRadius + 3; // Border per connessioni tra tile
+
+    TraceLog(LOG_INFO, "NavMesh: Config - cellSize: %.2f, tileSize(cells): %d, border: %d",
+             m_cfg.cs, m_cfg.tileSize, m_cfg.borderSize);
+
+    // Inizializza la navmesh tiled
+    if (!initNavMesh()) {
         return false;
     }
 
-    unsigned char* areas = new unsigned char[triCount];
-    memset(areas, 0, triCount);
-    
-    rcMarkWalkableTriangles(m_ctx, cfg.walkableSlopeAngle, transformedVerts.data(), mesh.vertexCount, tris.data(), triCount, areas);
-    
-    if (!rcRasterizeTriangles(m_ctx, transformedVerts.data(), mesh.vertexCount, tris.data(), areas, triCount, *hf, cfg.walkableClimb)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to rasterize triangles");
+    // Costruisci tutte le tile
+    int builtTiles = 0;
+    double startTime = GetTime();
+
+    for (int y = 0; y < m_tilesZ; y++) {
+        for (int x = 0; x < m_tilesX; x++) {
+            if (buildTile(x, y)) {
+                builtTiles++;
+            }
+        }
+    }
+
+    double elapsed = GetTime() - startTime;
+
+    TraceLog(LOG_INFO, "NavMesh: Built %d/%d tiles in %.2f seconds",
+             builtTiles, totalTiles, elapsed);
+    TraceLog(LOG_INFO, "NavMesh: Total polygons: %d", m_totalPolygons);
+
+    if (builtTiles == 0) {
+        TraceLog(LOG_ERROR, "NavMesh: No tiles were built!");
+        return false;
+    }
+
+    m_tileCount = builtTiles;
+    return true;
+}
+
+unsigned char* NavMesh::buildTileData(int tileX, int tileY, int& dataSize) {
+    dataSize = 0;
+
+    // Calcola i bounds della tile con bordo
+    float tileBmin[3], tileBmax[3];
+
+    tileBmin[0] = m_boundsMin[0] + tileX * m_tileSize;
+    tileBmin[1] = m_boundsMin[1];
+    tileBmin[2] = m_boundsMin[2] + tileY * m_tileSize;
+
+    tileBmax[0] = m_boundsMin[0] + (tileX + 1) * m_tileSize;
+    tileBmax[1] = m_boundsMax[1];
+    tileBmax[2] = m_boundsMin[2] + (tileY + 1) * m_tileSize;
+
+    // Espandi per il bordo
+    float borderSize = m_cfg.borderSize * m_cfg.cs;
+    tileBmin[0] -= borderSize;
+    tileBmin[2] -= borderSize;
+    tileBmax[0] += borderSize;
+    tileBmax[2] += borderSize;
+
+    // Setup config per questa tile
+    rcConfig tileCfg = m_cfg;
+    rcVcopy(tileCfg.bmin, tileBmin);
+    rcVcopy(tileCfg.bmax, tileBmax);
+
+    rcCalcGridSize(tileCfg.bmin, tileCfg.bmax, tileCfg.cs, &tileCfg.width, &tileCfg.height);
+
+    // Se la tile è troppo piccola, skip
+    if (tileCfg.width < 3 || tileCfg.height < 3) {
+        return nullptr;
+    }
+
+    // 1. Heightfield
+    rcHeightfield* hf = rcAllocHeightfield();
+    if (!hf) return nullptr;
+
+    if (!rcCreateHeightfield(m_ctx, *hf, tileCfg.width, tileCfg.height,
+                             tileCfg.bmin, tileCfg.bmax, tileCfg.cs, tileCfg.ch)) {
+        rcFreeHeightField(hf);
+        return nullptr;
+    }
+
+    // Rasterizza i triangoli
+    unsigned char* areas = new unsigned char[m_storedTriCount];
+    memset(areas, 0, m_storedTriCount);
+
+    rcMarkWalkableTriangles(m_ctx, tileCfg.walkableSlopeAngle,
+                            m_storedVerts.data(), m_storedVertCount,
+                            m_storedTris.data(), m_storedTriCount, areas);
+
+    if (!rcRasterizeTriangles(m_ctx, m_storedVerts.data(), m_storedVertCount,
+                              m_storedTris.data(), areas, m_storedTriCount,
+                              *hf, tileCfg.walkableClimb)) {
         delete[] areas;
         rcFreeHeightField(hf);
-        return false;
+        return nullptr;
     }
     delete[] areas;
 
-    // 5. Filtraggio
-    rcFilterLowHangingWalkableObstacles(m_ctx, cfg.walkableClimb, *hf);
-    rcFilterLedgeSpans(m_ctx, cfg.walkableHeight, cfg.walkableClimb, *hf);
-    rcFilterWalkableLowHeightSpans(m_ctx, cfg.walkableHeight, *hf);
+    // 2. Filtraggio
+    rcFilterLowHangingWalkableObstacles(m_ctx, tileCfg.walkableClimb, *hf);
+    rcFilterLedgeSpans(m_ctx, tileCfg.walkableHeight, tileCfg.walkableClimb, *hf);
+    rcFilterWalkableLowHeightSpans(m_ctx, tileCfg.walkableHeight, *hf);
 
-    // 6. Compact Heightfield
+    // 3. Compact heightfield
     rcCompactHeightfield* chf = rcAllocCompactHeightfield();
     if (!chf) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate compact heightfield");
         rcFreeHeightField(hf);
-        return false;
+        return nullptr;
     }
-    
-    if (!rcBuildCompactHeightfield(m_ctx, cfg.walkableHeight, cfg.walkableClimb, *hf, *chf)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to build compact heightfield");
+
+    if (!rcBuildCompactHeightfield(m_ctx, tileCfg.walkableHeight, tileCfg.walkableClimb, *hf, *chf)) {
         rcFreeHeightField(hf);
         rcFreeCompactHeightfield(chf);
-        return false;
+        return nullptr;
     }
     rcFreeHeightField(hf);
 
-    if (!rcErodeWalkableArea(m_ctx, cfg.walkableRadius, *chf)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to erode walkable area");
+    // 4. Erosione
+    if (!rcErodeWalkableArea(m_ctx, tileCfg.walkableRadius, *chf)) {
         rcFreeCompactHeightfield(chf);
-        return false;
-    }
-    
-    if (!rcBuildDistanceField(m_ctx, *chf)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to build distance field");
-        rcFreeCompactHeightfield(chf);
-        return false;
-    }
-    
-    if (!rcBuildRegions(m_ctx, *chf, 0, cfg.minRegionArea, cfg.mergeRegionArea)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to build regions");
-        rcFreeCompactHeightfield(chf);
-        return false;
+        return nullptr;
     }
 
-    // 7. Contours
+    // 5. Distance field e regioni
+    if (!rcBuildDistanceField(m_ctx, *chf)) {
+        rcFreeCompactHeightfield(chf);
+        return nullptr;
+    }
+
+    if (!rcBuildRegions(m_ctx, *chf, tileCfg.borderSize, tileCfg.minRegionArea, tileCfg.mergeRegionArea)) {
+        rcFreeCompactHeightfield(chf);
+        return nullptr;
+    }
+
+    // 6. Contours
     rcContourSet* cset = rcAllocContourSet();
     if (!cset) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate contour set");
         rcFreeCompactHeightfield(chf);
-        return false;
-    }
-    
-    if (!rcBuildContours(m_ctx, *chf, cfg.maxSimplificationError, cfg.maxEdgeLen, *cset)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to build contours");
-        rcFreeCompactHeightfield(chf);
-        rcFreeContourSet(cset);
-        return false;
+        return nullptr;
     }
 
-    // 8. PolyMesh
+    if (!rcBuildContours(m_ctx, *chf, tileCfg.maxSimplificationError, tileCfg.maxEdgeLen, *cset)) {
+        rcFreeCompactHeightfield(chf);
+        rcFreeContourSet(cset);
+        return nullptr;
+    }
+
+    // 7. Poly mesh
     rcPolyMesh* pmesh = rcAllocPolyMesh();
     if (!pmesh) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate poly mesh");
         rcFreeCompactHeightfield(chf);
         rcFreeContourSet(cset);
-        return false;
-    }
-    
-    if (!rcBuildPolyMesh(m_ctx, *cset, cfg.maxVertsPerPoly, *pmesh)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to build poly mesh");
-        rcFreeCompactHeightfield(chf);
-        rcFreeContourSet(cset);
-        rcFreePolyMesh(pmesh);
-        return false;
+        return nullptr;
     }
 
-    // 9. Detail Mesh
-    rcPolyMeshDetail* dmesh = rcAllocPolyMeshDetail();
-    if (!dmesh) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate detail mesh");
+    if (!rcBuildPolyMesh(m_ctx, *cset, tileCfg.maxVertsPerPoly, *pmesh)) {
         rcFreeCompactHeightfield(chf);
         rcFreeContourSet(cset);
         rcFreePolyMesh(pmesh);
-        return false;
+        return nullptr;
     }
-    
-    if (!rcBuildPolyMeshDetail(m_ctx, *pmesh, *chf, cfg.detailSampleDist, cfg.detailSampleMaxError, *dmesh)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to build detail mesh");
+
+    // 8. Detail mesh
+    rcPolyMeshDetail* dmesh = rcAllocPolyMeshDetail();
+    if (!dmesh) {
+        rcFreeCompactHeightfield(chf);
+        rcFreeContourSet(cset);
+        rcFreePolyMesh(pmesh);
+        return nullptr;
+    }
+
+    if (!rcBuildPolyMeshDetail(m_ctx, *pmesh, *chf, tileCfg.detailSampleDist, tileCfg.detailSampleMaxError, *dmesh)) {
         rcFreeCompactHeightfield(chf);
         rcFreeContourSet(cset);
         rcFreePolyMesh(pmesh);
         rcFreePolyMeshDetail(dmesh);
-        return false;
+        return nullptr;
     }
 
     rcFreeCompactHeightfield(chf);
     rcFreeContourSet(cset);
 
-    // 10. Setup polygon flags
+    // Se non ci sono poligoni, tile vuota
+    if (pmesh->npolys == 0) {
+        rcFreePolyMesh(pmesh);
+        rcFreePolyMeshDetail(dmesh);
+        return nullptr;
+    }
+
+    // Setup flags
     for (int i = 0; i < pmesh->npolys; i++) {
-        pmesh->flags[i] = 1;  // Walkable
+        pmesh->flags[i] = 1; // Walkable
     }
 
-    TraceLog(LOG_INFO, "NavMesh: PolyMesh created - Vertices: %d, Polygons: %d",
-             pmesh->nverts, pmesh->npolys);
-    TraceLog(LOG_INFO, "NavMesh: DetailMesh - Vertices: %d, Triangles: %d",
-             dmesh->nverts, dmesh->ntris);
-
-    // Check per limiti di Detour
-    if (pmesh->nverts > 60000) {
-        TraceLog(LOG_WARNING, "NavMesh: Troppi vertici (%d > 60000), potrebbe fallire!", pmesh->nverts);
+    // Salva poly mesh per debug (opzionale)
+    TileCoord tc = {tileX, tileY};
+    if (m_tileDebugData.find(tc) != m_tileDebugData.end()) {
+        if (m_tileDebugData[tc].polyMesh) {
+            rcFreePolyMesh(m_tileDebugData[tc].polyMesh);
+        }
     }
-    if (pmesh->npolys > 32000) {
-        TraceLog(LOG_WARNING, "NavMesh: Troppi poligoni (%d > 32000), potrebbe fallire!", pmesh->npolys);
+    // Copia il poly mesh per il debug
+    rcPolyMesh* debugPmesh = rcAllocPolyMesh();
+    if (debugPmesh) {
+        // Copia manuale dei dati essenziali
+        debugPmesh->nverts = pmesh->nverts;
+        debugPmesh->npolys = pmesh->npolys;
+        debugPmesh->nvp = pmesh->nvp;
+        debugPmesh->cs = pmesh->cs;
+        debugPmesh->ch = pmesh->ch;
+        rcVcopy(debugPmesh->bmin, pmesh->bmin);
+        rcVcopy(debugPmesh->bmax, pmesh->bmax);
+
+        debugPmesh->verts = (unsigned short*)rcAlloc(sizeof(unsigned short) * pmesh->nverts * 3, RC_ALLOC_PERM);
+        debugPmesh->polys = (unsigned short*)rcAlloc(sizeof(unsigned short) * pmesh->npolys * pmesh->nvp * 2, RC_ALLOC_PERM);
+        debugPmesh->flags = (unsigned short*)rcAlloc(sizeof(unsigned short) * pmesh->npolys, RC_ALLOC_PERM);
+        debugPmesh->areas = (unsigned char*)rcAlloc(sizeof(unsigned char) * pmesh->npolys, RC_ALLOC_PERM);
+
+        if (debugPmesh->verts && debugPmesh->polys && debugPmesh->flags && debugPmesh->areas) {
+            memcpy(debugPmesh->verts, pmesh->verts, sizeof(unsigned short) * pmesh->nverts * 3);
+            memcpy(debugPmesh->polys, pmesh->polys, sizeof(unsigned short) * pmesh->npolys * pmesh->nvp * 2);
+            memcpy(debugPmesh->flags, pmesh->flags, sizeof(unsigned short) * pmesh->npolys);
+            memcpy(debugPmesh->areas, pmesh->areas, sizeof(unsigned char) * pmesh->npolys);
+
+            m_tileDebugData[tc].polyMesh = debugPmesh;
+            m_tileDebugData[tc].meshBuilt = false;
+        } else {
+            rcFreePolyMesh(debugPmesh);
+        }
     }
 
-    // 11. Creazione NavMesh Data per Detour
+    // 9. Crea dati navmesh per Detour
     dtNavMeshCreateParams params;
     memset(&params, 0, sizeof(params));
     params.verts = pmesh->verts;
@@ -248,60 +443,88 @@ bool NavMesh::build(const Mesh& mesh, Matrix transform) {
     params.walkableHeight = m_agentHeight;
     params.walkableRadius = m_agentRadius;
     params.walkableClimb = m_agentMaxClimb;
+    params.cs = tileCfg.cs;
+    params.ch = tileCfg.ch;
+    params.buildBvTree = true;
+    params.tileX = tileX;
+    params.tileY = tileY;
+    params.tileLayer = 0;
     rcVcopy(params.bmin, pmesh->bmin);
     rcVcopy(params.bmax, pmesh->bmax);
-    params.cs = cfg.cs;
-    params.ch = cfg.ch;
-    params.buildBvTree = true;
 
     unsigned char* navData = nullptr;
-    int navDataSize = 0;
-
-    if (!dtCreateNavMeshData(&params, &navData, &navDataSize)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to create Detour navmesh data!");
-        TraceLog(LOG_ERROR, "NavMesh: Cause probabili:");
-        TraceLog(LOG_ERROR, "  - Troppi vertici (%d) o poligoni (%d)", pmesh->nverts, pmesh->npolys);
-        TraceLog(LOG_ERROR, "  - Grid troppo grande (%d x %d)", cfg.width, cfg.height);
-        TraceLog(LOG_ERROR, "NavMesh: SOLUZIONE: Aumenta cellSize in map.cpp o usa una mappa più piccola");
+    if (!dtCreateNavMeshData(&params, &navData, &dataSize)) {
         rcFreePolyMesh(pmesh);
         rcFreePolyMeshDetail(dmesh);
-        return false;
+        return nullptr;
     }
 
-    // 12. Inizializza NavMesh
-    m_navMesh = dtAllocNavMesh();
+    m_totalPolygons += pmesh->npolys;
+
+    rcFreePolyMesh(pmesh);
+    rcFreePolyMeshDetail(dmesh);
+
+    return navData;
+}
+
+bool NavMesh::buildTile(int tileX, int tileY) {
     if (!m_navMesh) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate Detour navmesh");
-        dtFree(navData);
-        rcFreePolyMesh(pmesh);
-        rcFreePolyMeshDetail(dmesh);
+        TraceLog(LOG_ERROR, "NavMesh: NavMesh not initialized");
         return false;
     }
-    
-    dtStatus status = m_navMesh->init(navData, navDataSize, DT_TILE_FREE_DATA);
+
+    // Rimuovi tile esistente
+    dtTileRef existingTile = m_navMesh->getTileRefAt(tileX, tileY, 0);
+    if (existingTile) {
+        m_navMesh->removeTile(existingTile, nullptr, nullptr);
+    }
+
+    // Costruisci i dati della tile
+    int dataSize = 0;
+    unsigned char* data = buildTileData(tileX, tileY, dataSize);
+
+    if (!data) {
+        // Tile vuota - nessun poligono walkable
+        return false;
+    }
+
+    // Aggiungi la tile
+    dtStatus status = m_navMesh->addTile(data, dataSize, DT_TILE_FREE_DATA, 0, nullptr);
     if (dtStatusFailed(status)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to init Detour navmesh");
-        dtFree(navData);
-        rcFreePolyMesh(pmesh);
-        rcFreePolyMeshDetail(dmesh);
+        dtFree(data);
+        TraceLog(LOG_ERROR, "NavMesh: Failed to add tile (%d, %d)", tileX, tileY);
         return false;
     }
 
-    // 13. Inizializza Query
-    status = m_navQuery->init(m_navMesh, 2048);
-    if (dtStatusFailed(status)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to init Detour query");
-        rcFreePolyMesh(pmesh);
-        rcFreePolyMeshDetail(dmesh);
-        return false;
-    }
-
-    // Salva per debug drawing
-    m_polyMesh = pmesh;
-    m_polyMeshDetail = dmesh;
-
-    TraceLog(LOG_INFO, "NavMesh: Built successfully with %d polys", pmesh->npolys);
     return true;
+}
+
+bool NavMesh::removeTile(int tileX, int tileY) {
+    if (!m_navMesh) return false;
+
+    dtTileRef ref = m_navMesh->getTileRefAt(tileX, tileY, 0);
+    if (ref) {
+        m_navMesh->removeTile(ref, nullptr, nullptr);
+
+        // Rimuovi debug data
+        TileCoord tc = {tileX, tileY};
+        auto it = m_tileDebugData.find(tc);
+        if (it != m_tileDebugData.end()) {
+            if (it->second.polyMesh) rcFreePolyMesh(it->second.polyMesh);
+            if (it->second.debugModel.meshCount > 0) UnloadModel(it->second.debugModel);
+            m_tileDebugData.erase(it);
+        }
+
+        m_tileCount--;
+        m_debugMeshBuilt = false;
+        return true;
+    }
+    return false;
+}
+
+bool NavMesh::rebuildTile(int tileX, int tileY) {
+    removeTile(tileX, tileY);
+    return buildTile(tileX, tileY);
 }
 
 std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
@@ -314,7 +537,6 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
 
     float sPos[3] = { start.x, start.y, start.z };
     float ePos[3] = { end.x, end.y, end.z };
-    // Aumentati gli extents per trovare poligoni più lontani, specialmente in verticale
     float extents[3] = { 10.0f, 50.0f, 10.0f };
 
     dtQueryFilter filter;
@@ -330,15 +552,13 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
     if (!startRef || !endRef) {
         TraceLog(LOG_WARNING, "NavMesh: Could not find start or end polygon (start: %.2f,%.2f,%.2f, end: %.2f,%.2f,%.2f)",
                  start.x, start.y, start.z, end.x, end.y, end.z);
-        TraceLog(LOG_INFO, "NavMesh: Start polygon found: %s, End polygon found: %s",
-                 startRef ? "YES" : "NO", endRef ? "YES" : "NO");
         return pathPoints;
     }
 
     static const int MAX_POLYS = 256;
     dtPolyRef pathPolys[MAX_POLYS];
     int pathCount = 0;
-    
+
     m_navQuery->findPath(startRef, endRef, nearestStart, nearestEnd, &filter, pathPolys, &pathCount, MAX_POLYS);
 
     if (pathCount > 0) {
@@ -346,16 +566,16 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
         unsigned char straightPathFlags[MAX_POLYS];
         dtPolyRef straightPathPolys[MAX_POLYS];
         int straightPathCount = 0;
-        
+
         m_navQuery->findStraightPath(nearestStart, nearestEnd, pathPolys, pathCount,
                                      straightPath, straightPathFlags, straightPathPolys,
                                      &straightPathCount, MAX_POLYS, 0);
 
         for (int i = 0; i < straightPathCount; i++) {
-            pathPoints.push_back({ 
-                straightPath[i * 3], 
-                straightPath[i * 3 + 1], 
-                straightPath[i * 3 + 2] 
+            pathPoints.push_back({
+                straightPath[i * 3],
+                straightPath[i * 3 + 1],
+                straightPath[i * 3 + 2]
             });
         }
     }
@@ -365,28 +585,28 @@ std::vector<Vector3> NavMesh::findPath(Vector3 start, Vector3 end) {
 
 void NavMesh::setParametersForMapSize(float mapSize) {
     if (mapSize < 500.0f) {
-        // Mappe piccole (< 500 unità)
         m_cellSize = 0.2f;
         m_cellHeight = 0.2f;
         m_agentRadius = 0.5f;
+        m_tileSize = 32.0f;
         TraceLog(LOG_INFO, "NavMesh: Parameters set for SMALL map (< 500)");
     } else if (mapSize < 2000.0f) {
-        // Mappe medie (500-2000 unità)
         m_cellSize = 0.3f;
         m_cellHeight = 0.3f;
         m_agentRadius = 0.6f;
+        m_tileSize = 64.0f;
         TraceLog(LOG_INFO, "NavMesh: Parameters set for MEDIUM map (500-2000)");
     } else if (mapSize < 5000.0f) {
-        // Mappe grandi (2000-5000 unità)
         m_cellSize = 0.5f;
         m_cellHeight = 0.4f;
         m_agentRadius = 0.8f;
+        m_tileSize = 128.0f;
         TraceLog(LOG_INFO, "NavMesh: Parameters set for LARGE map (2000-5000)");
     } else {
-        // Mappe molto grandi (> 5000 unità)
         m_cellSize = 0.8f;
         m_cellHeight = 0.5f;
         m_agentRadius = 1.0f;
+        m_tileSize = 256.0f;
         TraceLog(LOG_INFO, "NavMesh: Parameters set for HUGE map (> 5000)");
     }
 }
@@ -413,105 +633,114 @@ bool NavMesh::projectPointToNavMesh(Vector3 point, Vector3& projectedPoint) {
         projectedPoint.x = nearestPoint[0];
         projectedPoint.y = nearestPoint[1];
         projectedPoint.z = nearestPoint[2];
-        TraceLog(LOG_INFO, "NavMesh: Point projected from (%.2f,%.2f,%.2f) to (%.2f,%.2f,%.2f)",
-                 point.x, point.y, point.z, projectedPoint.x, projectedPoint.y, projectedPoint.z);
         return true;
     }
 
-    TraceLog(LOG_WARNING, "NavMesh: Could not project point (%.2f,%.2f,%.2f) to navmesh",
-             point.x, point.y, point.z);
     return false;
 }
 
 void NavMesh::buildDebugMesh() {
-    if (!m_polyMesh || m_polyMesh->npolys == 0) return;
-    
-    // Conta i vertici e triangoli necessari
-    std::vector<Vector3> vertices;
-    std::vector<unsigned short> indices;
-    std::vector<Color> colors;
-    
-    for (int i = 0; i < m_polyMesh->npolys; i++) {
-        const unsigned short* p = &m_polyMesh->polys[i * m_polyMesh->nvp * 2];
-        
-        // Trova i vertici del poligono
-        std::vector<Vector3> polyVerts;
-        for (int j = 0; j < m_polyMesh->nvp; j++) {
-            if (p[j] == RC_MESH_NULL_IDX) break;
-            
-            const unsigned short* v = &m_polyMesh->verts[p[j] * 3];
-            float x = m_polyMesh->bmin[0] + v[0] * m_polyMesh->cs;
-            float y = m_polyMesh->bmin[1] + (v[1] + 1) * m_polyMesh->ch + 0.2f;
-            float z = m_polyMesh->bmin[2] + v[2] * m_polyMesh->cs;
-            polyVerts.push_back({x, y, z});
-        }
-        
-        // Triangola il poligono (fan triangulation)
-        if (polyVerts.size() >= 3) {
-            unsigned short baseIndex = (unsigned short)vertices.size();
-            
-            for (const auto& v : polyVerts) {
-                vertices.push_back(v);
-                // Colore verde semi-trasparente
-                colors.push_back({0, 200, 0, 100});
+    if (m_tileDebugData.empty()) return;
+
+    std::vector<Vector3> allVertices;
+    std::vector<unsigned short> allIndices;
+    std::vector<Color> allColors;
+
+    // Colori diversi per tile diverse
+    Color tileColors[] = {
+        {0, 200, 0, 100},    // Verde
+        {0, 150, 200, 100},  // Cyan
+        {200, 150, 0, 100},  // Arancione
+        {150, 0, 200, 100},  // Viola
+        {200, 0, 100, 100},  // Magenta
+        {100, 200, 0, 100},  // Lime
+    };
+    int numColors = sizeof(tileColors) / sizeof(tileColors[0]);
+
+    int colorIndex = 0;
+    for (auto& pair : m_tileDebugData) {
+        rcPolyMesh* pmesh = pair.second.polyMesh;
+        if (!pmesh || pmesh->npolys == 0) continue;
+
+        Color tileColor = tileColors[colorIndex % numColors];
+        colorIndex++;
+
+        for (int i = 0; i < pmesh->npolys; i++) {
+            const unsigned short* p = &pmesh->polys[i * pmesh->nvp * 2];
+
+            std::vector<Vector3> polyVerts;
+            for (int j = 0; j < pmesh->nvp; j++) {
+                if (p[j] == RC_MESH_NULL_IDX) break;
+
+                const unsigned short* v = &pmesh->verts[p[j] * 3];
+                float x = pmesh->bmin[0] + v[0] * pmesh->cs;
+                float y = pmesh->bmin[1] + (v[1] + 1) * pmesh->ch + 0.2f;
+                float z = pmesh->bmin[2] + v[2] * pmesh->cs;
+                polyVerts.push_back({x, y, z});
             }
-            
-            // Fan triangulation
-            for (size_t j = 1; j < polyVerts.size() - 1; j++) {
-                indices.push_back(baseIndex);
-                indices.push_back(baseIndex + j);
-                indices.push_back(baseIndex + j + 1);
+
+            if (polyVerts.size() >= 3) {
+                unsigned short baseIndex = (unsigned short)allVertices.size();
+
+                for (const auto& v : polyVerts) {
+                    allVertices.push_back(v);
+                    allColors.push_back(tileColor);
+                }
+
+                for (size_t j = 1; j < polyVerts.size() - 1; j++) {
+                    allIndices.push_back(baseIndex);
+                    allIndices.push_back(baseIndex + j);
+                    allIndices.push_back(baseIndex + j + 1);
+                }
             }
         }
     }
-    
-    if (vertices.empty()) return;
-    
-    // Crea la mesh
-    Mesh debugMesh = {0};
-    debugMesh.vertexCount = vertices.size();
-    debugMesh.triangleCount = indices.size() / 3;
-    
-    debugMesh.vertices = (float*)MemAlloc(vertices.size() * 3 * sizeof(float));
-    debugMesh.indices = (unsigned short*)MemAlloc(indices.size() * sizeof(unsigned short));
-    debugMesh.colors = (unsigned char*)MemAlloc(vertices.size() * 4 * sizeof(unsigned char));
-    
-    for (size_t i = 0; i < vertices.size(); i++) {
-        debugMesh.vertices[i * 3 + 0] = vertices[i].x;
-        debugMesh.vertices[i * 3 + 1] = vertices[i].y;
-        debugMesh.vertices[i * 3 + 2] = vertices[i].z;
-        
-        debugMesh.colors[i * 4 + 0] = colors[i].r;
-        debugMesh.colors[i * 4 + 1] = colors[i].g;
-        debugMesh.colors[i * 4 + 2] = colors[i].b;
-        debugMesh.colors[i * 4 + 3] = colors[i].a;
-    }
-    
-    for (size_t i = 0; i < indices.size(); i++) {
-        debugMesh.indices[i] = indices[i];
-    }
-    
-    UploadMesh(&debugMesh, false);
-    
-    // Cleanup old model
+
+    if (allVertices.empty()) return;
+
+    // Cleanup vecchio model
     if (m_debugModel.meshCount > 0) {
         UnloadModel(m_debugModel);
+        m_debugModel = {0};
     }
-    
+
+    Mesh debugMesh = {0};
+    debugMesh.vertexCount = allVertices.size();
+    debugMesh.triangleCount = allIndices.size() / 3;
+
+    debugMesh.vertices = (float*)MemAlloc(allVertices.size() * 3 * sizeof(float));
+    debugMesh.indices = (unsigned short*)MemAlloc(allIndices.size() * sizeof(unsigned short));
+    debugMesh.colors = (unsigned char*)MemAlloc(allVertices.size() * 4 * sizeof(unsigned char));
+
+    for (size_t i = 0; i < allVertices.size(); i++) {
+        debugMesh.vertices[i * 3 + 0] = allVertices[i].x;
+        debugMesh.vertices[i * 3 + 1] = allVertices[i].y;
+        debugMesh.vertices[i * 3 + 2] = allVertices[i].z;
+
+        debugMesh.colors[i * 4 + 0] = allColors[i].r;
+        debugMesh.colors[i * 4 + 1] = allColors[i].g;
+        debugMesh.colors[i * 4 + 2] = allColors[i].b;
+        debugMesh.colors[i * 4 + 3] = allColors[i].a;
+    }
+
+    for (size_t i = 0; i < allIndices.size(); i++) {
+        debugMesh.indices[i] = allIndices[i];
+    }
+
+    UploadMesh(&debugMesh, false);
     m_debugModel = LoadModelFromMesh(debugMesh);
     m_debugMeshBuilt = true;
-    
-    TraceLog(LOG_INFO, "NavMesh: Debug mesh built with %d vertices, %d triangles", 
-             (int)vertices.size(), (int)indices.size() / 3);
+
+    TraceLog(LOG_INFO, "NavMesh: Debug mesh built with %d vertices, %d triangles from %d tiles",
+             (int)allVertices.size(), (int)allIndices.size() / 3, (int)m_tileDebugData.size());
 }
 
 void NavMesh::drawDebug() {
     if (!m_debugMeshBuilt) {
         buildDebugMesh();
     }
-    
+
     if (m_debugMeshBuilt && m_debugModel.meshCount > 0) {
-        // Disegna con blending per la trasparenza
         rlDisableBackfaceCulling();
         rlEnableColorBlend();
         DrawModel(m_debugModel, {0, 0, 0}, 1.0f, WHITE);

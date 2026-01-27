@@ -136,97 +136,68 @@ void Map::buildNavMesh() {
 
         TraceLog(LOG_INFO, "Map size: %.1f x %.1f (max: %.1f)", mapWidth, mapLength, mapSize);
 
-        // Calcolo cellSize per evitare overflow di Detour
-        // Limite SICURO: max 500x500 grid (250k cells) per evitare errori
-        float targetGridSize;
-
+        // Configura parametri adattivi per la dimensione della mappa
+        // Il sistema tiled gestisce automaticamente la suddivisione
         if (mapSize < 500.0f) {
-            targetGridSize = 500.0f;   // Mappe molto piccole: alta risoluzione
-        } else if (mapSize < 1000.0f) {
-            targetGridSize = 800.0f;   // Mappe piccole
-        } else if (mapSize < 2000.0f) {
-            targetGridSize = 600.0f;   // Mappe medie
-        } else if (mapSize < 3000.0f) {
-            targetGridSize = 500.0f;   // Mappe grandi
-        } else {
-            targetGridSize = 400.0f;   // Mappe MOLTO grandi (4000+): super bassa risoluzione
-        }
-
-        float suggestedCellSize = mapSize / targetGridSize;
-
-        // Clamp tra 0.3 e 20.0 (aumentato per mappe enormi)
-        navMesh.m_cellSize = fmaxf(0.3f, fminf(20.0f, suggestedCellSize));
-        navMesh.m_cellHeight = fmaxf(0.3f, navMesh.m_cellSize * 0.4f);  // Ridotto ratio per efficienza
-
-        // PARAMETRI ADATTIVI in base alla dimensione mappa
-        if (mapSize < 500.0f) {
-            // Mappe MOLTO piccole (< 500): parametri conservativi
+            navMesh.m_cellSize = 0.3f;
+            navMesh.m_cellHeight = 0.2f;
             navMesh.m_agentRadius = 0.6f;
             navMesh.m_agentMaxClimb = 0.9f;
-            navMesh.m_agentMaxSlope = 45.0f;    // Permette pendenze fino a 45°
-            navMesh.m_minRegionArea = 8.0f;     // Area minima PICCOLA (64 cells)
-            navMesh.m_mergeRegionArea = 20.0f;  // Merge conservativo (400 cells)
-            navMesh.m_maxSimplificationError = 1.3f;  // Bassa tolleranza per dettaglio
+            navMesh.m_agentMaxSlope = 45.0f;
+            navMesh.m_minRegionArea = 8.0f;
+            navMesh.m_mergeRegionArea = 20.0f;
+            navMesh.m_tileSize = 32.0f;
             TraceLog(LOG_INFO, "NavMesh: Using SMALL map parameters (< 500)");
         } else if (mapSize < 1000.0f) {
-            // Mappe piccole (500-1000)
+            navMesh.m_cellSize = 0.4f;
+            navMesh.m_cellHeight = 0.3f;
             navMesh.m_agentRadius = 0.8f;
             navMesh.m_agentMaxClimb = 1.0f;
             navMesh.m_agentMaxSlope = 45.0f;
-            navMesh.m_minRegionArea = 10.0f;    // 100 cells
-            navMesh.m_mergeRegionArea = 25.0f;  // 625 cells
-            navMesh.m_maxSimplificationError = 1.4f;
-            TraceLog(LOG_INFO, "NavMesh: Using SMALL map parameters (500-1000)");
+            navMesh.m_minRegionArea = 10.0f;
+            navMesh.m_mergeRegionArea = 25.0f;
+            navMesh.m_tileSize = 48.0f;
+            TraceLog(LOG_INFO, "NavMesh: Using SMALL-MEDIUM map parameters (500-1000)");
         } else if (mapSize < 2000.0f) {
-            // Mappe medie (1000-2000)
+            navMesh.m_cellSize = 0.5f;
+            navMesh.m_cellHeight = 0.3f;
             navMesh.m_agentRadius = 1.0f;
             navMesh.m_agentMaxClimb = 1.0f;
             navMesh.m_agentMaxSlope = 42.0f;
-            navMesh.m_minRegionArea = 12.0f;    // 144 cells
-            navMesh.m_mergeRegionArea = 30.0f;  // 900 cells
-            navMesh.m_maxSimplificationError = 1.5f;
+            navMesh.m_minRegionArea = 12.0f;
+            navMesh.m_mergeRegionArea = 30.0f;
+            navMesh.m_tileSize = 64.0f;
             TraceLog(LOG_INFO, "NavMesh: Using MEDIUM map parameters (1000-2000)");
-        } else if (mapSize < 3000.0f) {
-            // Mappe grandi (2000-3000)
+        } else if (mapSize < 4000.0f) {
+            navMesh.m_cellSize = 0.8f;
+            navMesh.m_cellHeight = 0.4f;
             navMesh.m_agentRadius = 1.5f;
             navMesh.m_agentMaxClimb = 1.2f;
             navMesh.m_agentMaxSlope = 40.0f;
-            navMesh.m_minRegionArea = 15.0f;    // 225 cells
-            navMesh.m_mergeRegionArea = 35.0f;  // 1225 cells
-            navMesh.m_maxSimplificationError = 1.7f;
-            TraceLog(LOG_INFO, "NavMesh: Using LARGE map parameters (2000-3000)");
+            navMesh.m_minRegionArea = 15.0f;
+            navMesh.m_mergeRegionArea = 35.0f;
+            navMesh.m_tileSize = 128.0f;
+            TraceLog(LOG_INFO, "NavMesh: Using LARGE map parameters (2000-4000)");
         } else {
-            // Mappe MOLTO grandi (4000+)
+            navMesh.m_cellSize = 1.0f;
+            navMesh.m_cellHeight = 0.5f;
             navMesh.m_agentRadius = 2.0f;
             navMesh.m_agentMaxClimb = 1.5f;
             navMesh.m_agentMaxSlope = 35.0f;
-            navMesh.m_minRegionArea = 20.0f;    // 400 cells - aggressivo
-            navMesh.m_mergeRegionArea = 50.0f;  // 2500 cells - molto aggressivo
-            navMesh.m_maxSimplificationError = 2.0f;
-            TraceLog(LOG_INFO, "NavMesh: Using HUGE map parameters (> 3000)");
+            navMesh.m_minRegionArea = 20.0f;
+            navMesh.m_mergeRegionArea = 50.0f;
+            navMesh.m_tileSize = 256.0f;
+            TraceLog(LOG_INFO, "NavMesh: Using HUGE map parameters (> 4000)");
         }
 
-        float estimatedGridWidth = mapWidth / navMesh.m_cellSize;
-        float estimatedGridHeight = mapLength / navMesh.m_cellSize;
-        float estimatedCells = estimatedGridWidth * estimatedGridHeight;
+        // Costruisci la navmesh tiled
+        navMeshBuilt = navMesh.buildTiled(model.meshes[0], model.transform);
 
-        TraceLog(LOG_INFO, "Using cellSize: %.2f, cellHeight: %.2f", navMesh.m_cellSize, navMesh.m_cellHeight);
-        TraceLog(LOG_INFO, "Estimated grid: %.0f x %.0f (total: %.0f cells = %.2f M)",
-                 estimatedGridWidth, estimatedGridHeight, estimatedCells, estimatedCells / 1000000.0f);
-
-        // Warning se la grid è troppo grande
-        if (estimatedCells > 2000000) {  // 2 milioni
-            TraceLog(LOG_WARNING, "NavMesh: Grid molto grande (%.2fM cells), rischio overflow Detour!",
-                     estimatedCells / 1000000.0f);
-            TraceLog(LOG_WARNING, "NavMesh: Considera di usare una mappa più piccola o tiled navmesh");
-        }
-
-        // Passa la trasformazione del modello!
-        navMeshBuilt = navMesh.build(model.meshes[0], model.transform);
-
-        if (!navMeshBuilt) {
-            TraceLog(LOG_ERROR, "NavMesh build FAILED! Grid troppo grande o parametri non validi.");
-            TraceLog(LOG_ERROR, "Prova ad aumentare cellSize manualmente o ridurre le dimensioni della mappa.");
+        if (navMeshBuilt) {
+            TraceLog(LOG_INFO, "NavMesh: Tiled build SUCCESS - %d tiles, %d total polygons",
+                     navMesh.getTileCount(), navMesh.getTotalPolygons());
+        } else {
+            TraceLog(LOG_ERROR, "NavMesh: Tiled build FAILED!");
         }
     }
 }
@@ -238,45 +209,49 @@ void Map::drawNavMeshDebug() {
 }
 void Map::gui() {
     ImGui::PushID(this);
-    
+
     if (ImGui::CollapsingHeader("Map")) {
         ImGui::Text("Meshes: %d", model.meshCount);
         ImGui::Text("Materials: %d", model.materialCount);
-        
+
         ImGui::Separator();
-        ImGui::Text("NavMesh");
-        
+        ImGui::Text("NavMesh (Tiled)");
+
         if (navMeshBuilt) {
             ImGui::TextColored(ImVec4(0, 1, 0, 1), "Status: Ready");
+            ImGui::Text("Tiles: %d", navMesh.getTileCount());
+            ImGui::Text("Total Polygons: %d", navMesh.getTotalPolygons());
             ImGui::Checkbox("Show Debug", &showNavMeshDebug);
         } else {
             ImGui::TextColored(ImVec4(1, 0, 0, 1), "Status: Not Built");
-            
+
             if (ImGui::Button("Build NavMesh")) {
                 buildNavMesh();
             }
         }
-        
+
         ImGui::Separator();
         ImGui::Text("NavMesh Settings");
-        ImGui::SliderFloat("Cell Size", &navMesh.m_cellSize, 1.0f, 20.0f);
-        ImGui::SliderFloat("Cell Height", &navMesh.m_cellHeight, 0.5f, 10.0f);
-        ImGui::SliderFloat("Agent Radius", &navMesh.m_agentRadius, 0.5f, 5.0f);
+        ImGui::SliderFloat("Cell Size", &navMesh.m_cellSize, 0.1f, 5.0f);
+        ImGui::SliderFloat("Cell Height", &navMesh.m_cellHeight, 0.1f, 2.0f);
+        ImGui::SliderFloat("Tile Size", &navMesh.m_tileSize, 16.0f, 512.0f);
+        ImGui::Separator();
+        ImGui::SliderFloat("Agent Radius", &navMesh.m_agentRadius, 0.2f, 5.0f);
         ImGui::SliderFloat("Agent Height", &navMesh.m_agentHeight, 1.0f, 10.0f);
-        ImGui::SliderFloat("Max Climb", &navMesh.m_agentMaxClimb, 0.5f, 5.0f);
+        ImGui::SliderFloat("Max Climb", &navMesh.m_agentMaxClimb, 0.1f, 5.0f);
         ImGui::SliderFloat("Max Slope", &navMesh.m_agentMaxSlope, 15.0f, 75.0f);
-ImGui::Spacing();
-if (ImGui::Button("Rebuild NavMesh")) {
-    double startTime = GetTime();
-    navMeshBuilt = false;
-    buildNavMesh();
-    double elapsed = GetTime() - startTime;
-    TraceLog(LOG_INFO, "NavMesh rebuilt in %.2f seconds", elapsed);
-}
+        ImGui::Spacing();
+        if (ImGui::Button("Rebuild NavMesh")) {
+            double startTime = GetTime();
+            navMeshBuilt = false;
+            buildNavMesh();
+            double elapsed = GetTime() - startTime;
+            TraceLog(LOG_INFO, "NavMesh rebuilt in %.2f seconds", elapsed);
+        }
     }
-    
+
     ImGui::PopID();
-};
+}
 
   void Map::addSea() {
     seaMesh = GenMeshPlane(5000, 5000, 50, 50);

@@ -192,6 +192,10 @@ bool StructureBuilder::placeStructure() {
     return false;
   }
 
+  TraceLog(LOG_INFO, "StructureBuilder: Placing structure '%s' at position (%.2f, %.2f, %.2f)",
+           m_assetFiles[m_selectedAsset].c_str(),
+           m_previewPosition.x, m_previewPosition.y, m_previewPosition.z);
+
   // Crea una nuova struttura
   auto structure = std::make_unique<Structure>();
   Vector3 up = {0.0f, 1.0f, 0.0f};
@@ -213,7 +217,7 @@ bool StructureBuilder::placeStructure() {
 
   // Verifica che il modello sia stato caricato correttamente
   if (!structure->hasModel()) {
-    TraceLog(LOG_ERROR, "Failed to load structure model: %s",
+    TraceLog(LOG_ERROR, "StructureBuilder: Failed to load structure model: %s",
              modelPath.c_str());
     return false;
   }
@@ -228,11 +232,17 @@ bool StructureBuilder::placeStructure() {
   // Update bounds for navmesh obstacle
   structure->updateBounds();
 
+  TraceLog(LOG_INFO, "StructureBuilder: Structure bounds: min(%.2f, %.2f, %.2f) max(%.2f, %.2f, %.2f)",
+           structure->bounds.min.x, structure->bounds.min.y, structure->bounds.min.z,
+           structure->bounds.max.x, structure->bounds.max.y, structure->bounds.max.z);
+
   // Add structure as navmesh obstacle
   if (m_navMesh) {
     structure->navMeshObstacleRef = m_navMesh->addObstacle(structure->bounds);
     TraceLog(LOG_INFO, "StructureBuilder: Added navmesh obstacle ref=%u for structure",
              structure->navMeshObstacleRef);
+  } else {
+    TraceLog(LOG_WARNING, "StructureBuilder: NavMesh not available - structure will not block pathfinding");
   }
 
   // Imposta il nome con un contatore per renderlo unico
@@ -245,6 +255,7 @@ bool StructureBuilder::placeStructure() {
   GameObject *root = getRoot();
   if (root) {
     root->addChild(std::move(structure));
+    TraceLog(LOG_INFO, "StructureBuilder: Structure '%s' added to scene", structure->name.c_str());
   }
   return true;
 }

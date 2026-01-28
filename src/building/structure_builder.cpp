@@ -230,9 +230,9 @@ bool StructureBuilder::placeStructure() {
 
   // Add structure as navmesh obstacle
   if (m_navMesh) {
-    structure->navMeshObstacleId = m_navMesh->addObstacle(structure->bounds);
-    TraceLog(LOG_INFO, "StructureBuilder: Added navmesh obstacle %d for structure",
-             structure->navMeshObstacleId);
+    structure->navMeshObstacleRef = m_navMesh->addObstacle(structure->bounds);
+    TraceLog(LOG_INFO, "StructureBuilder: Added navmesh obstacle ref=%u for structure",
+             structure->navMeshObstacleRef);
   }
 
   // Imposta il nome con un contatore per renderlo unico

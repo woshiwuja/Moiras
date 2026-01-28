@@ -5,6 +5,9 @@
 #include <raylib.h>
 #include <string>
 
+// Forward declaration for dtObstacleRef
+typedef unsigned int dtObstacleRef;
+
 namespace moiras {
 
 // Rappresenta una struttura piazzata nel mondo
@@ -20,8 +23,8 @@ public:
     // Bounding box per collisioni e navmesh obstacles
     BoundingBox bounds;
 
-    // NavMesh obstacle ID (0 = not registered)
-    int navMeshObstacleId = 0;
+    // NavMesh obstacle reference (0 = not registered)
+    dtObstacleRef navMeshObstacleRef = 0;
 
     Structure();
     ~Structure();

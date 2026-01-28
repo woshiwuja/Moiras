@@ -178,6 +178,11 @@ namespace moiras
       auto camera = root.getChildOfType<GameCamera>();
       auto map = root.getChildOfType<Map>();
 
+      // Update navmesh tile cache (processes obstacle changes)
+      if (map && map->navMeshBuilt) {
+        map->navMesh.update(GetFrameTime());
+      }
+
       // Aggiorna il player controller (solo se non siamo in building mode)
       bool inBuildingMode = (structureBuilder && structureBuilder->isBuildingMode());
       if (playerController && camera && !inBuildingMode)

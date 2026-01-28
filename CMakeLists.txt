@@ -104,6 +104,7 @@ target_include_directories(Moiras PUBLIC
     ${recastnavigation_SOURCE_DIR}/Recast/Include
     ${recastnavigation_SOURCE_DIR}/Detour/Include
     ${recastnavigation_SOURCE_DIR}/DetourCrowd/Include
+    ${recastnavigation_SOURCE_DIR}/DetourTileCache/Include
     raylib/src/
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/
     ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui/
@@ -124,4 +125,5 @@ target_link_libraries(Moiras
     Recast
     Detour
     DetourCrowd
+    DetourTileCache
 )

@@ -2,6 +2,8 @@
 
 #include "DetourNavMesh.h"
 #include "DetourNavMeshQuery.h"
+#include "DetourTileCache.h"
+#include "DetourTileCacheBuilder.h"
 #include "Recast.h"
 #include <raylib.h>
 #include <vector>
@@ -28,10 +30,41 @@ struct TileCoordHash {
   }
 };
 
-// Obstacle data for navmesh
-struct NavMeshObstacle {
-  BoundingBox bounds;
-  int id;
+// ============================================
+// Tile Cache helper classes
+// ============================================
+
+// Linear allocator for tile cache
+struct LinearAllocator : public dtTileCacheAlloc
+{
+    unsigned char* buffer;
+    size_t capacity;
+    size_t top;
+    size_t high;
+
+    LinearAllocator(const size_t cap);
+    ~LinearAllocator();
+
+    void reset() override;
+    void* alloc(const size_t size) override;
+    void free(void* ptr) override;
+};
+
+// Simple compressor (passthrough - no actual compression)
+struct TileCacheCompressor : public dtTileCacheCompressor
+{
+    int maxCompressedSize(const int bufferSize) override;
+    dtStatus compress(const unsigned char* buffer, const int bufferSize,
+                     unsigned char* compressed, const int maxCompressedSize, int* compressedSize) override;
+    dtStatus decompress(const unsigned char* compressed, const int compressedSize,
+                       unsigned char* buffer, const int maxBufferSize, int* bufferSize) override;
+};
+
+// Mesh processor for tile cache
+struct TileCacheMeshProcess : public dtTileCacheMeshProcess
+{
+    void process(struct dtNavMeshCreateParams* params,
+                unsigned char* polyAreas, unsigned short* polyFlags) override;
 };
 
 class NavMesh {
@@ -74,20 +107,20 @@ public:
   void setParametersForMapSize(float mapSize);
 
   // ============================================
-  // Obstacle management
+  // Obstacle management (uses dtTileCache)
   // ============================================
 
-  // Add an obstacle and rebuild affected tiles
-  int addObstacle(BoundingBox bounds);
+  // Add a box obstacle and return its reference
+  dtObstacleRef addObstacle(BoundingBox bounds);
 
-  // Remove an obstacle and rebuild affected tiles
-  bool removeObstacle(int obstacleId);
+  // Remove an obstacle by reference
+  bool removeObstacle(dtObstacleRef ref);
+
+  // Update tile cache - call this each frame to process obstacle changes
+  void update(float dt);
 
   // Get tiles affected by a bounding box
   std::vector<TileCoord> getAffectedTiles(BoundingBox bounds) const;
-
-  // Rebuild tiles affected by a bounding box
-  void rebuildAffectedTiles(BoundingBox bounds);
 
   // ============================================
   // Parametri navmesh
@@ -133,6 +166,12 @@ private:
   dtNavMesh *m_navMesh;
   dtNavMeshQuery *m_navQuery;
 
+  // Tile cache for dynamic obstacles
+  dtTileCache *m_tileCache;
+  LinearAllocator *m_talloc;
+  TileCacheCompressor *m_tcomp;
+  TileCacheMeshProcess *m_tmproc;
+
   // Dati della mesh originale (per rebuild delle tile)
   std::vector<float> m_storedVerts;
   std::vector<int> m_storedTris;
@@ -169,18 +208,21 @@ private:
 
   // Metodi privati
   bool initNavMesh();
+  bool initTileCache();
   unsigned char* buildTileData(int tileX, int tileY, int& dataSize);
+  int rasterizeTileLayers(int tileX, int tileY, const rcConfig& cfg,
+                          struct TileCacheData* tiles, int maxTiles);
   void buildDebugMesh();
   void buildDebugMeshFromNavMesh();  // Costruisce debug mesh da dtNavMesh
   void buildDebugMeshForTile(int tileX, int tileY, rcPolyMesh* pmesh);
   void cleanupTileDebugData();
+};
 
-  // Mark obstacle areas in compact heightfield
-  void markObstacleAreas(rcCompactHeightfield* chf, float tileBmin[3], float tileBmax[3]);
-
-  // Obstacle storage
-  std::vector<NavMeshObstacle> m_obstacles;
-  int m_nextObstacleId = 1;
+// Tile data for building cache layers
+struct TileCacheData
+{
+  unsigned char* data;
+  int dataSize;
 };
 
 } // namespace moiras

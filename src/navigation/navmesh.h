@@ -23,6 +23,12 @@ struct TileCoord {
   }
 };
 
+// Struttura per un ostacolo statico (building)
+struct NavMeshObstacle {
+  unsigned int id;
+  BoundingBox bounds;
+};
+
 // Hash per TileCoord
 struct TileCoordHash {
   std::size_t operator()(const TileCoord& tc) const {
@@ -107,17 +113,14 @@ public:
   void setParametersForMapSize(float mapSize);
 
   // ============================================
-  // Obstacle management (uses dtTileCache)
+  // Obstacle management (rebuilds affected tiles)
   // ============================================
 
-  // Add a box obstacle and return its reference
-  dtObstacleRef addObstacle(BoundingBox bounds);
+  // Add a box obstacle and return its ID (rebuilds affected tiles)
+  unsigned int addObstacle(BoundingBox bounds);
 
-  // Remove an obstacle by reference
-  bool removeObstacle(dtObstacleRef ref);
-
-  // Update tile cache - call this each frame to process obstacle changes
-  void update(float dt);
+  // Remove an obstacle by ID (rebuilds affected tiles)
+  bool removeObstacle(unsigned int obstacleId);
 
   // Get tiles affected by a bounding box
   std::vector<TileCoord> getAffectedTiles(BoundingBox bounds) const;
@@ -205,6 +208,10 @@ private:
   // Debug mesh globale (combinata)
   Model m_debugModel = {0};
   bool m_debugMeshBuilt = false;
+
+  // Obstacle management
+  std::vector<NavMeshObstacle> m_obstacles;
+  unsigned int m_nextObstacleId = 1;
 
   // Metodi privati
   bool initNavMesh();

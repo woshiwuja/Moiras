@@ -643,6 +643,13 @@ unsigned char* NavMesh::buildTileData(int tileX, int tileY, int& dataSize) {
         return nullptr;
     }
 
+    // 4.5 Mark obstacle areas as non-walkable
+    for (const auto& obstacle : m_obstacles) {
+        float obmin[3] = { obstacle.bounds.min.x, obstacle.bounds.min.y, obstacle.bounds.min.z };
+        float obmax[3] = { obstacle.bounds.max.x, obstacle.bounds.max.y, obstacle.bounds.max.z };
+        rcMarkBoxArea(m_ctx, obmin, obmax, RC_NULL_AREA, *chf);
+    }
+
     // 5. Distance field e regioni
     if (!rcBuildDistanceField(m_ctx, *chf)) {
         rcFreeCompactHeightfield(chf);
@@ -1249,121 +1256,78 @@ bool NavMesh::loadFromFile(const std::string& filename) {
 }
 
 // ============================================
-// Obstacle management (using dtTileCache)
+// Obstacle management (rebuilds affected tiles)
 // ============================================
 
-dtObstacleRef NavMesh::addObstacle(BoundingBox bounds) {
-    if (!m_tileCache) {
-        TraceLog(LOG_ERROR, "NavMesh: Tile cache not initialized - cannot add obstacle");
+unsigned int NavMesh::addObstacle(BoundingBox bounds) {
+    if (!m_navMesh) {
+        TraceLog(LOG_ERROR, "NavMesh: NavMesh not initialized - cannot add obstacle");
         return 0;
     }
 
-    // Convert raylib BoundingBox to float arrays
-    float bmin[3] = { bounds.min.x, bounds.min.y, bounds.min.z };
-    float bmax[3] = { bounds.max.x, bounds.max.y, bounds.max.z };
+    // Create obstacle entry
+    NavMeshObstacle obstacle;
+    obstacle.id = m_nextObstacleId++;
+    obstacle.bounds = bounds;
 
-    // Verify the obstacle is within the navmesh bounds
-    if (bmax[0] < m_boundsMin[0] || bmin[0] > m_boundsMax[0] ||
-        bmax[2] < m_boundsMin[2] || bmin[2] > m_boundsMax[2]) {
-        TraceLog(LOG_WARNING, "NavMesh: Obstacle at (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) is outside navmesh bounds (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)",
-                 bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2],
-                 m_boundsMin[0], m_boundsMin[1], m_boundsMin[2],
-                 m_boundsMax[0], m_boundsMax[1], m_boundsMax[2]);
-    }
-
-    // Log current obstacle count
-    int obstacleCount = m_tileCache->getObstacleCount();
-    TraceLog(LOG_INFO, "NavMesh: Adding obstacle (current count: %d, max: %d)",
-             obstacleCount, m_tileCache->getParams()->maxObstacles);
-
-    // Log which tiles this obstacle will affect
+    // Get affected tiles
     std::vector<TileCoord> affectedTiles = getAffectedTiles(bounds);
-    TraceLog(LOG_INFO, "NavMesh: Obstacle will affect %d tiles:", (int)affectedTiles.size());
+
+    TraceLog(LOG_INFO, "NavMesh: Adding obstacle %u at (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f), affects %d tiles",
+             obstacle.id,
+             bounds.min.x, bounds.min.y, bounds.min.z,
+             bounds.max.x, bounds.max.y, bounds.max.z,
+             (int)affectedTiles.size());
+
+    // Add to obstacle list
+    m_obstacles.push_back(obstacle);
+
+    // Rebuild affected tiles
     for (const auto& tc : affectedTiles) {
-        TraceLog(LOG_INFO, "  - Tile (%d, %d)", tc.x, tc.y);
-    }
-
-    dtObstacleRef ref = 0;
-    dtStatus status = m_tileCache->addBoxObstacle(bmin, bmax, &ref);
-
-    if (dtStatusFailed(status)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to add obstacle at (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f), status=%u",
-                 bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2], status);
-        return 0;
-    }
-
-    TraceLog(LOG_INFO, "NavMesh: Added obstacle ref=%u at (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f)",
-             ref, bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
-
-    // Check obstacle state
-    const dtTileCacheObstacle* ob = m_tileCache->getObstacleByRef(ref);
-    if (ob) {
-        const char* stateStr = "unknown";
-        switch (ob->state) {
-            case DT_OBSTACLE_EMPTY: stateStr = "EMPTY"; break;
-            case DT_OBSTACLE_PROCESSING: stateStr = "PROCESSING"; break;
-            case DT_OBSTACLE_PROCESSED: stateStr = "PROCESSED"; break;
-            case DT_OBSTACLE_REMOVING: stateStr = "REMOVING"; break;
-        }
-        TraceLog(LOG_INFO, "NavMesh: Obstacle state=%s, type=%d, touched=%d, pending=%d",
-                 stateStr, ob->type, ob->ntouched, ob->npending);
+        TraceLog(LOG_INFO, "NavMesh: Rebuilding tile (%d, %d) for obstacle", tc.x, tc.y);
+        rebuildTile(tc.x, tc.y);
     }
 
     // Invalidate debug mesh
     m_debugMeshBuilt = false;
 
-    return ref;
+    return obstacle.id;
 }
 
-bool NavMesh::removeObstacle(dtObstacleRef ref) {
-    if (!m_tileCache) {
-        TraceLog(LOG_ERROR, "NavMesh: Tile cache not initialized - cannot remove obstacle");
+bool NavMesh::removeObstacle(unsigned int obstacleId) {
+    if (!m_navMesh) {
+        TraceLog(LOG_ERROR, "NavMesh: NavMesh not initialized - cannot remove obstacle");
         return false;
     }
 
-    dtStatus status = m_tileCache->removeObstacle(ref);
+    // Find obstacle
+    auto it = std::find_if(m_obstacles.begin(), m_obstacles.end(),
+        [obstacleId](const NavMeshObstacle& obs) { return obs.id == obstacleId; });
 
-    if (dtStatusFailed(status)) {
-        TraceLog(LOG_WARNING, "NavMesh: Failed to remove obstacle ref=%u", ref);
+    if (it == m_obstacles.end()) {
+        TraceLog(LOG_WARNING, "NavMesh: Obstacle %u not found", obstacleId);
         return false;
     }
 
-    TraceLog(LOG_INFO, "NavMesh: Removed obstacle ref=%u", ref);
+    // Get affected tiles before removing
+    std::vector<TileCoord> affectedTiles = getAffectedTiles(it->bounds);
+
+    TraceLog(LOG_INFO, "NavMesh: Removing obstacle %u, affects %d tiles",
+             obstacleId, (int)affectedTiles.size());
+
+    // Remove from list
+    m_obstacles.erase(it);
+
+    // Rebuild affected tiles
+    for (const auto& tc : affectedTiles) {
+        TraceLog(LOG_INFO, "NavMesh: Rebuilding tile (%d, %d) after obstacle removal", tc.x, tc.y);
+        rebuildTile(tc.x, tc.y);
+    }
 
     // Invalidate debug mesh
     m_debugMeshBuilt = false;
 
     return true;
-}
-
-void NavMesh::update(float dt) {
-    if (!m_tileCache || !m_navMesh) {
-        return;
-    }
-
-    // Process all pending tile cache operations
-    // The update function only processes one request at a time, so we loop
-    const int MAX_UPDATES = 100; // Safety limit
-    int updateCount = 0;
-    bool upToDate = false;
-
-    while (!upToDate && updateCount < MAX_UPDATES) {
-        dtStatus status = m_tileCache->update(dt, m_navMesh, &upToDate);
-
-        if (dtStatusFailed(status)) {
-            TraceLog(LOG_WARNING, "NavMesh: TileCache update failed with status %u", status);
-            break;
-        }
-
-        updateCount++;
-    }
-
-    // Log if we processed any updates
-    if (updateCount > 0) {
-        TraceLog(LOG_INFO, "NavMesh: Processed %d tile cache updates (upToDate: %s)",
-                 updateCount, upToDate ? "yes" : "no");
-        m_debugMeshBuilt = false; // Force debug mesh rebuild
-    }
 }
 
 std::vector<TileCoord> NavMesh::getAffectedTiles(BoundingBox bounds) const {

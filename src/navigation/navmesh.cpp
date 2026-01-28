@@ -520,36 +520,15 @@ bool NavMesh::buildTiled(const Mesh& mesh, Matrix transform) {
         return false;
     }
 
-    // Build tile cache layers and navmesh tiles
+    // Build navmesh tiles using the proven buildTileData() method
     int builtTiles = 0;
     double startTime = GetTime();
 
-    const int MAX_LAYERS = 32;
-    TileCacheData tiles[MAX_LAYERS];
-
     for (int y = 0; y < m_tilesZ; y++) {
         for (int x = 0; x < m_tilesX; x++) {
-            // Build tile cache layers for this tile
-            int ntiles = rasterizeTileLayers(x, y, m_cfg, tiles, MAX_LAYERS);
-
-            // Add layers to tile cache
-            for (int i = 0; i < ntiles; ++i) {
-                dtStatus status = m_tileCache->addTile(tiles[i].data, tiles[i].dataSize,
-                                                       DT_COMPRESSEDTILE_FREE_DATA, 0);
-                if (dtStatusFailed(status)) {
-                    dtFree(tiles[i].data);
-                    tiles[i].data = nullptr;
-                }
+            if (buildTile(x, y)) {
+                builtTiles++;
             }
-
-            builtTiles++;
-        }
-    }
-
-    // Build initial navmesh tiles from the tile cache
-    for (int y = 0; y < m_tilesZ; y++) {
-        for (int x = 0; x < m_tilesX; x++) {
-            m_tileCache->buildNavMeshTilesAt(x, y, m_navMesh);
         }
     }
 

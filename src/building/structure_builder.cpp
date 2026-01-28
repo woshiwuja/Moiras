@@ -255,7 +255,6 @@ bool StructureBuilder::placeStructure() {
   GameObject *root = getRoot();
   if (root) {
     root->addChild(std::move(structure));
-    TraceLog(LOG_INFO, "StructureBuilder: Structure '%s' added to scene", structure->name.c_str());
   }
   return true;
 }

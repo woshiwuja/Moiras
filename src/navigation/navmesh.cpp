@@ -344,6 +344,9 @@ unsigned char* NavMesh::buildTileData(int tileX, int tileY, int& dataSize) {
         return nullptr;
     }
 
+    // 4.5 Mark obstacle areas as non-walkable
+    markObstacleAreas(chf, tileBmin, tileBmax);
+
     // 5. Distance field e regioni
     if (!rcBuildDistanceField(m_ctx, *chf)) {
         rcFreeCompactHeightfield(chf);
@@ -947,6 +950,107 @@ bool NavMesh::loadFromFile(const std::string& filename) {
              filename.c_str(), m_tileCount, m_totalPolygons);
 
     return m_tileCount > 0;
+}
+
+// ============================================
+// Obstacle management
+// ============================================
+
+void NavMesh::markObstacleAreas(rcCompactHeightfield* chf, float tileBmin[3], float tileBmax[3]) {
+    if (!chf || m_obstacles.empty()) return;
+
+    for (const auto& obstacle : m_obstacles) {
+        // Check if obstacle bounds overlap with tile bounds
+        if (obstacle.bounds.max.x < tileBmin[0] || obstacle.bounds.min.x > tileBmax[0] ||
+            obstacle.bounds.max.z < tileBmin[2] || obstacle.bounds.min.z > tileBmax[2]) {
+            continue; // Obstacle doesn't overlap with this tile
+        }
+
+        // Convert obstacle bounds to Recast format
+        float bmin[3] = { obstacle.bounds.min.x, obstacle.bounds.min.y, obstacle.bounds.min.z };
+        float bmax[3] = { obstacle.bounds.max.x, obstacle.bounds.max.y, obstacle.bounds.max.z };
+
+        // Mark the box area as non-walkable (RC_NULL_AREA = 0)
+        rcMarkBoxArea(m_ctx, bmin, bmax, RC_NULL_AREA, *chf);
+
+        TraceLog(LOG_DEBUG, "NavMesh: Marked obstacle area (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f)",
+                 bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
+    }
+}
+
+int NavMesh::addObstacle(BoundingBox bounds) {
+    NavMeshObstacle obstacle;
+    obstacle.bounds = bounds;
+    obstacle.id = m_nextObstacleId++;
+
+    m_obstacles.push_back(obstacle);
+
+    TraceLog(LOG_INFO, "NavMesh: Added obstacle %d at (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f)",
+             obstacle.id, bounds.min.x, bounds.min.y, bounds.min.z,
+             bounds.max.x, bounds.max.y, bounds.max.z);
+
+    // Rebuild affected tiles
+    rebuildAffectedTiles(bounds);
+
+    return obstacle.id;
+}
+
+bool NavMesh::removeObstacle(int obstacleId) {
+    for (auto it = m_obstacles.begin(); it != m_obstacles.end(); ++it) {
+        if (it->id == obstacleId) {
+            BoundingBox bounds = it->bounds;
+            m_obstacles.erase(it);
+
+            TraceLog(LOG_INFO, "NavMesh: Removed obstacle %d", obstacleId);
+
+            // Rebuild affected tiles
+            rebuildAffectedTiles(bounds);
+            return true;
+        }
+    }
+
+    TraceLog(LOG_WARNING, "NavMesh: Obstacle %d not found", obstacleId);
+    return false;
+}
+
+std::vector<TileCoord> NavMesh::getAffectedTiles(BoundingBox bounds) const {
+    std::vector<TileCoord> tiles;
+
+    if (m_tileSize <= 0) return tiles;
+
+    // Get tile coordinates for min and max corners
+    TileCoord minTile = getTileCoordAt(bounds.min);
+    TileCoord maxTile = getTileCoordAt(bounds.max);
+
+    // Enumerate all tiles in the range
+    for (int x = minTile.x; x <= maxTile.x; x++) {
+        for (int y = minTile.y; y <= maxTile.y; y++) {
+            // Check if tile is within valid range
+            if (x >= 0 && x < m_tilesX && y >= 0 && y < m_tilesZ) {
+                tiles.push_back({x, y});
+            }
+        }
+    }
+
+    return tiles;
+}
+
+void NavMesh::rebuildAffectedTiles(BoundingBox bounds) {
+    if (!m_navMesh) {
+        TraceLog(LOG_WARNING, "NavMesh: Cannot rebuild tiles - navmesh not initialized");
+        return;
+    }
+
+    std::vector<TileCoord> tiles = getAffectedTiles(bounds);
+
+    TraceLog(LOG_INFO, "NavMesh: Rebuilding %d tiles affected by obstacle", (int)tiles.size());
+
+    for (const auto& tile : tiles) {
+        rebuildTile(tile.x, tile.y);
+    }
+
+    // Invalidate debug mesh so it gets rebuilt
+    m_debugMeshBuilt = false;
 }
 
 } // namespace moiras

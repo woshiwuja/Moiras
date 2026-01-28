@@ -225,6 +225,16 @@ bool StructureBuilder::placeStructure() {
   structure->scale = m_previewScale;
   structure->isPlaced = true;
 
+  // Update bounds for navmesh obstacle
+  structure->updateBounds();
+
+  // Add structure as navmesh obstacle
+  if (m_navMesh) {
+    structure->navMeshObstacleId = m_navMesh->addObstacle(structure->bounds);
+    TraceLog(LOG_INFO, "StructureBuilder: Added navmesh obstacle %d for structure",
+             structure->navMeshObstacleId);
+  }
+
   // Imposta il nome con un contatore per renderlo unico
   static int structureCounter = 0;
   std::filesystem::path assetPath(m_assetFiles[m_selectedAsset]);

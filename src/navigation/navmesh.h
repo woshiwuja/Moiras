@@ -28,6 +28,12 @@ struct TileCoordHash {
   }
 };
 
+// Obstacle data for navmesh
+struct NavMeshObstacle {
+  BoundingBox bounds;
+  int id;
+};
+
 class NavMesh {
 public:
   NavMesh();
@@ -66,6 +72,22 @@ public:
 
   // Configura parametri per mappe di diverse dimensioni
   void setParametersForMapSize(float mapSize);
+
+  // ============================================
+  // Obstacle management
+  // ============================================
+
+  // Add an obstacle and rebuild affected tiles
+  int addObstacle(BoundingBox bounds);
+
+  // Remove an obstacle and rebuild affected tiles
+  bool removeObstacle(int obstacleId);
+
+  // Get tiles affected by a bounding box
+  std::vector<TileCoord> getAffectedTiles(BoundingBox bounds) const;
+
+  // Rebuild tiles affected by a bounding box
+  void rebuildAffectedTiles(BoundingBox bounds);
 
   // ============================================
   // Parametri navmesh
@@ -152,6 +174,13 @@ private:
   void buildDebugMeshFromNavMesh();  // Costruisce debug mesh da dtNavMesh
   void buildDebugMeshForTile(int tileX, int tileY, rcPolyMesh* pmesh);
   void cleanupTileDebugData();
+
+  // Mark obstacle areas in compact heightfield
+  void markObstacleAreas(rcCompactHeightfield* chf, float tileBmin[3], float tileBmax[3]);
+
+  // Obstacle storage
+  std::vector<NavMeshObstacle> m_obstacles;
+  int m_nextObstacleId = 1;
 };
 
 } // namespace moiras

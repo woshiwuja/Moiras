@@ -20,6 +20,9 @@ public:
     // Bounding box per collisioni e navmesh obstacles
     BoundingBox bounds;
 
+    // NavMesh obstacle ID (0 = not registered)
+    int navMeshObstacleId = 0;
+
     Structure();
     ~Structure();
 

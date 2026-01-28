@@ -10,8 +10,9 @@ namespace moiras {
 // ============================================================================
 
 ModelInstance::ModelInstance()
-    : m_manager(nullptr), m_meshes(nullptr), m_meshCount(0),
-      m_meshMaterial(nullptr), m_bones(nullptr), m_boneCount(0),
+    : m_manager(nullptr), m_sharedMeshes(nullptr), m_meshCount(0),
+      m_meshMaterial(nullptr), m_localMeshes(nullptr),
+      m_bones(nullptr), m_boneCount(0),
       m_bindPose(nullptr), m_currentPose(nullptr),
       m_materials(nullptr), m_materialCount(0) {}
 
@@ -20,7 +21,8 @@ ModelInstance::ModelInstance(ModelManager* manager, const std::string& path,
                              int* meshMaterial, Material* sourceMaterials, int materialCount,
                              BoneInfo* bones, int boneCount, Transform* bindPose)
     : m_manager(manager), m_path(path),
-      m_meshes(meshes), m_meshCount(meshCount), m_meshMaterial(meshMaterial),
+      m_sharedMeshes(meshes), m_meshCount(meshCount), m_meshMaterial(meshMaterial),
+      m_localMeshes(nullptr),
       m_bones(bones), m_boneCount(boneCount), m_bindPose(bindPose),
       m_currentPose(nullptr),
       m_materials(nullptr), m_materialCount(materialCount) {
@@ -48,27 +50,26 @@ ModelInstance::~ModelInstance() {
 
 ModelInstance::ModelInstance(ModelInstance&& other) noexcept
     : m_manager(other.m_manager), m_path(std::move(other.m_path)),
-      m_meshes(other.m_meshes), m_meshCount(other.m_meshCount),
+      m_sharedMeshes(other.m_sharedMeshes), m_meshCount(other.m_meshCount),
       m_meshMaterial(other.m_meshMaterial),
+      m_localMeshes(other.m_localMeshes),
       m_bones(other.m_bones), m_boneCount(other.m_boneCount),
       m_bindPose(other.m_bindPose), m_currentPose(other.m_currentPose),
       m_materials(other.m_materials), m_materialCount(other.m_materialCount),
-      m_animData(std::move(other.m_animData)),
-      m_animBackup(std::move(other.m_animBackup)),
-      m_animBound(other.m_animBound) {
+      m_animData(std::move(other.m_animData)) {
 
     // Clear other to prevent double-release
     other.m_manager = nullptr;
-    other.m_meshes = nullptr;
+    other.m_sharedMeshes = nullptr;
     other.m_meshCount = 0;
     other.m_meshMaterial = nullptr;
+    other.m_localMeshes = nullptr;
     other.m_bones = nullptr;
     other.m_boneCount = 0;
     other.m_bindPose = nullptr;
     other.m_currentPose = nullptr;
     other.m_materials = nullptr;
     other.m_materialCount = 0;
-    other.m_animBound = false;
 }
 
 ModelInstance& ModelInstance::operator=(ModelInstance&& other) noexcept {
@@ -77,9 +78,10 @@ ModelInstance& ModelInstance::operator=(ModelInstance&& other) noexcept {
 
         m_manager = other.m_manager;
         m_path = std::move(other.m_path);
-        m_meshes = other.m_meshes;
+        m_sharedMeshes = other.m_sharedMeshes;
         m_meshCount = other.m_meshCount;
         m_meshMaterial = other.m_meshMaterial;
+        m_localMeshes = other.m_localMeshes;
         m_bones = other.m_bones;
         m_boneCount = other.m_boneCount;
         m_bindPose = other.m_bindPose;
@@ -87,30 +89,23 @@ ModelInstance& ModelInstance::operator=(ModelInstance&& other) noexcept {
         m_materials = other.m_materials;
         m_materialCount = other.m_materialCount;
         m_animData = std::move(other.m_animData);
-        m_animBackup = std::move(other.m_animBackup);
-        m_animBound = other.m_animBound;
 
         other.m_manager = nullptr;
-        other.m_meshes = nullptr;
+        other.m_sharedMeshes = nullptr;
         other.m_meshCount = 0;
         other.m_meshMaterial = nullptr;
+        other.m_localMeshes = nullptr;
         other.m_bones = nullptr;
         other.m_boneCount = 0;
         other.m_bindPose = nullptr;
         other.m_currentPose = nullptr;
         other.m_materials = nullptr;
         other.m_materialCount = 0;
-        other.m_animBound = false;
     }
     return *this;
 }
 
 void ModelInstance::releaseAnimationData() {
-    // Unbind if currently bound
-    if (m_animBound) {
-        unbindAnimationData();
-    }
-
     // Free all per-instance animation data
     for (auto& data : m_animData) {
         if (data.animVertices != nullptr) {
@@ -124,7 +119,12 @@ void ModelInstance::releaseAnimationData() {
         }
     }
     m_animData.clear();
-    m_animBackup.clear();
+
+    // Free per-instance mesh structures
+    if (m_localMeshes != nullptr) {
+        RL_FREE(m_localMeshes);
+        m_localMeshes = nullptr;
+    }
 }
 
 void ModelInstance::release() {
@@ -150,7 +150,7 @@ void ModelInstance::release() {
     }
 
     m_manager = nullptr;
-    m_meshes = nullptr;
+    m_sharedMeshes = nullptr;
     m_meshCount = 0;
     m_meshMaterial = nullptr;
     m_bones = nullptr;
@@ -173,91 +173,64 @@ void ModelInstance::prepareForAnimation() {
     }
 
     // Already prepared?
-    if (!m_animData.empty()) {
+    if (m_localMeshes != nullptr) {
         return;
     }
 
+    // Clone mesh structures (not the vertex data, just the Mesh structs)
+    // This allows each instance to have its own animation buffer pointers
+    m_localMeshes = static_cast<Mesh*>(RL_MALLOC(m_meshCount * sizeof(Mesh)));
     m_animData.resize(m_meshCount);
-    m_animBackup.resize(m_meshCount);
 
     for (int i = 0; i < m_meshCount; i++) {
-        Mesh& mesh = m_meshes[i];
+        // Copy the entire Mesh structure (pointers to shared VBOs, etc.)
+        m_localMeshes[i] = m_sharedMeshes[i];
+
+        Mesh& localMesh = m_localMeshes[i];
         MeshAnimationData& data = m_animData[i];
 
-        data.vertexCount = mesh.vertexCount;
-        data.boneCount = mesh.boneCount;
+        data.vertexCount = localMesh.vertexCount;
+        data.boneCount = localMesh.boneCount;
 
-        // Clone animVertices if present
-        if (mesh.animVertices != nullptr) {
-            size_t size = mesh.vertexCount * 3 * sizeof(float);
+        // Clone animVertices for per-instance animation
+        if (m_sharedMeshes[i].animVertices != nullptr) {
+            size_t size = localMesh.vertexCount * 3 * sizeof(float);
             data.animVertices = static_cast<float*>(RL_MALLOC(size));
-            memcpy(data.animVertices, mesh.animVertices, size);
+            memcpy(data.animVertices, m_sharedMeshes[i].animVertices, size);
+            // Point local mesh to our per-instance buffer
+            localMesh.animVertices = data.animVertices;
         }
 
-        // Clone animNormals if present
-        if (mesh.animNormals != nullptr) {
-            size_t size = mesh.vertexCount * 3 * sizeof(float);
+        // Clone animNormals for per-instance animation
+        if (m_sharedMeshes[i].animNormals != nullptr) {
+            size_t size = localMesh.vertexCount * 3 * sizeof(float);
             data.animNormals = static_cast<float*>(RL_MALLOC(size));
-            memcpy(data.animNormals, mesh.animNormals, size);
+            memcpy(data.animNormals, m_sharedMeshes[i].animNormals, size);
+            // Point local mesh to our per-instance buffer
+            localMesh.animNormals = data.animNormals;
         }
 
-        // Clone boneMatrices if present
-        if (mesh.boneMatrices != nullptr && mesh.boneCount > 0) {
-            size_t size = mesh.boneCount * sizeof(Matrix);
+        // Clone boneMatrices for per-instance animation
+        if (m_sharedMeshes[i].boneMatrices != nullptr && localMesh.boneCount > 0) {
+            size_t size = localMesh.boneCount * sizeof(Matrix);
             data.boneMatrices = static_cast<Matrix*>(RL_MALLOC(size));
-            memcpy(data.boneMatrices, mesh.boneMatrices, size);
+            memcpy(data.boneMatrices, m_sharedMeshes[i].boneMatrices, size);
+            // Point local mesh to our per-instance buffer
+            localMesh.boneMatrices = data.boneMatrices;
         }
     }
 
-    TraceLog(LOG_INFO, "ModelInstance: Prepared animation data for %d meshes", m_meshCount);
+    TraceLog(LOG_INFO, "ModelInstance: Prepared per-instance animation data for %d meshes", m_meshCount);
 }
 
 void ModelInstance::bindAnimationData() {
-    if (m_animData.empty() || m_animBound) {
-        return;
-    }
-
-    for (int i = 0; i < m_meshCount; i++) {
-        Mesh& mesh = m_meshes[i];
-        MeshAnimationData& data = m_animData[i];
-        MeshAnimBackup& backup = m_animBackup[i];
-
-        // Save original pointers
-        backup.animVertices = mesh.animVertices;
-        backup.animNormals = mesh.animNormals;
-        backup.boneMatrices = mesh.boneMatrices;
-
-        // Swap in our per-instance data
-        if (data.animVertices != nullptr) {
-            mesh.animVertices = data.animVertices;
-        }
-        if (data.animNormals != nullptr) {
-            mesh.animNormals = data.animNormals;
-        }
-        if (data.boneMatrices != nullptr) {
-            mesh.boneMatrices = data.boneMatrices;
-        }
-    }
-
-    m_animBound = true;
+    // No-op: with per-instance mesh structures, animation buffers are always ready
+    // This function is kept for API compatibility
 }
 
 void ModelInstance::unbindAnimationData() {
-    if (m_animBackup.empty() || !m_animBound) {
-        return;
-    }
-
-    for (int i = 0; i < m_meshCount; i++) {
-        Mesh& mesh = m_meshes[i];
-        MeshAnimBackup& backup = m_animBackup[i];
-
-        // Restore original pointers
-        mesh.animVertices = backup.animVertices;
-        mesh.animNormals = backup.animNormals;
-        mesh.boneMatrices = backup.boneMatrices;
-    }
-
-    m_animBound = false;
+    // No-op: with per-instance mesh structures, no need to restore shared state
+    // This function is kept for API compatibility
 }
 
 void ModelInstance::applyShader(Shader shader) {
@@ -273,11 +246,11 @@ void ModelInstance::applyShader(Shader shader) {
 BoundingBox ModelInstance::getBoundingBox() const {
     BoundingBox bounds = {0};
 
-    if (m_meshes != nullptr && m_meshCount > 0) {
-        bounds = GetMeshBoundingBox(m_meshes[0]);
+    if (m_sharedMeshes != nullptr && m_meshCount > 0) {
+        bounds = GetMeshBoundingBox(m_sharedMeshes[0]);
 
         for (int i = 1; i < m_meshCount; i++) {
-            BoundingBox meshBounds = GetMeshBoundingBox(m_meshes[i]);
+            BoundingBox meshBounds = GetMeshBoundingBox(m_sharedMeshes[i]);
 
             // Expand bounds to include this mesh
             if (meshBounds.min.x < bounds.min.x) bounds.min.x = meshBounds.min.x;

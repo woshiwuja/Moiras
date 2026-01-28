@@ -238,9 +238,9 @@ bool StructureBuilder::placeStructure() {
 
   // Add structure as navmesh obstacle
   if (m_navMesh) {
-    structure->navMeshObstacleRef = m_navMesh->addObstacle(structure->bounds);
-    TraceLog(LOG_INFO, "StructureBuilder: Added navmesh obstacle ref=%u for structure",
-             structure->navMeshObstacleRef);
+    structure->navMeshObstacleId = m_navMesh->addObstacle(structure->bounds);
+    TraceLog(LOG_INFO, "StructureBuilder: Added navmesh obstacle id=%u for structure",
+             structure->navMeshObstacleId);
   } else {
     TraceLog(LOG_WARNING, "StructureBuilder: NavMesh not available - structure will not block pathfinding");
   }

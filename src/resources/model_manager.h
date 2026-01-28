@@ -3,10 +3,20 @@
 #include <raylib.h>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace moiras {
 
 class ModelManager;
+
+// Per-mesh animation data for independent animation playback
+struct MeshAnimationData {
+    float* animVertices = nullptr;   // Per-instance animated vertices
+    float* animNormals = nullptr;    // Per-instance animated normals
+    Matrix* boneMatrices = nullptr;  // Per-instance bone matrices
+    int vertexCount = 0;
+    int boneCount = 0;
+};
 
 // ModelInstance - holds a reference to shared mesh data with per-instance materials
 class ModelInstance {
@@ -30,6 +40,15 @@ public:
     int meshCount() const { return m_meshCount; }
     int* meshMaterial() const { return m_meshMaterial; }
 
+    // Access bone data for animations
+    BoneInfo* bones() const { return m_bones; }
+    int boneCount() const { return m_boneCount; }
+    Transform* bindPose() const { return m_bindPose; }
+
+    // Access per-instance current pose (for animations)
+    Transform* currentPose() { return m_currentPose; }
+    const Transform* currentPose() const { return m_currentPose; }
+
     // Access per-instance materials
     Material* materials() { return m_materials; }
     const Material* materials() const { return m_materials; }
@@ -44,15 +63,32 @@ public:
     // Get the model path
     const std::string& getPath() const { return m_path; }
 
+    // Reset current pose to bind pose
+    void resetPose();
+
+    // Animation support - prepares instance for animation playback
+    void prepareForAnimation();
+
+    // Swap per-instance animation data into meshes (call before UpdateModelAnimation)
+    void bindAnimationData();
+
+    // Restore shared animation data (call after drawing if needed)
+    void unbindAnimationData();
+
+    // Check if animation data is allocated
+    bool hasAnimationData() const { return !m_animData.empty(); }
+
 private:
     friend class ModelManager;
 
     // Only ModelManager can create valid instances
     ModelInstance(ModelManager* manager, const std::string& path,
                   Mesh* meshes, int meshCount,
-                  int* meshMaterial, Material* sourceMaterials, int materialCount);
+                  int* meshMaterial, Material* sourceMaterials, int materialCount,
+                  BoneInfo* bones, int boneCount, Transform* bindPose);
 
     void release();
+    void releaseAnimationData();
 
     ModelManager* m_manager = nullptr;
     std::string m_path;
@@ -62,9 +98,29 @@ private:
     int m_meshCount = 0;
     int* m_meshMaterial = nullptr;
 
+    // Shared bone data for animations (owned by ModelManager)
+    BoneInfo* m_bones = nullptr;
+    int m_boneCount = 0;
+    Transform* m_bindPose = nullptr;
+
+    // Per-instance current pose (owned by this instance)
+    Transform* m_currentPose = nullptr;
+
     // Per-instance materials (owned by this instance)
     Material* m_materials = nullptr;
     int m_materialCount = 0;
+
+    // Per-instance animation data for each mesh (owned by this instance)
+    std::vector<MeshAnimationData> m_animData;
+
+    // Backup of shared mesh animation pointers (for unbind)
+    struct MeshAnimBackup {
+        float* animVertices;
+        float* animNormals;
+        Matrix* boneMatrices;
+    };
+    std::vector<MeshAnimBackup> m_animBackup;
+    bool m_animBound = false;
 };
 
 // ModelManager - caches models, shares mesh data, provides instances

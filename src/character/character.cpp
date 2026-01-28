@@ -30,6 +30,7 @@ Character::Character()
 Character::~Character() {
     TraceLog(LOG_INFO, "Destroying character: %s", name.c_str());
     // ModelInstance destructor handles cleanup automatically
+    unloadAnimations();
 }
 
 Character::Character(Character &&other) noexcept
@@ -37,13 +38,25 @@ Character::Character(Character &&other) noexcept
       name(std::move(other.name)), eulerRot(other.eulerRot),
       isVisible(other.isVisible), scale(other.scale),
       modelInstance(std::move(other.modelInstance)),
-      quat_rotation(other.quat_rotation) {
+      quat_rotation(other.quat_rotation),
+      m_animations(other.m_animations),
+      m_animationCount(other.m_animationCount),
+      m_currentAnimIndex(other.m_currentAnimIndex),
+      m_currentFrame(other.m_currentFrame),
+      m_animationTimer(other.m_animationTimer),
+      m_isAnimating(other.m_isAnimating) {
+    // Clear other's animation pointers to prevent double-free
+    other.m_animations = nullptr;
+    other.m_animationCount = 0;
     TraceLog(LOG_INFO, "Character moved: %s", name.c_str());
 }
 
 Character &Character::operator=(Character &&other) noexcept {
     if (this != &other) {
         GameObject::operator=(std::move(other));
+
+        // Unload existing animations before moving
+        unloadAnimations();
 
         health = other.health;
         name = std::move(other.name);
@@ -52,6 +65,18 @@ Character &Character::operator=(Character &&other) noexcept {
         scale = other.scale;
         modelInstance = std::move(other.modelInstance);
         quat_rotation = other.quat_rotation;
+
+        // Move animation data
+        m_animations = other.m_animations;
+        m_animationCount = other.m_animationCount;
+        m_currentAnimIndex = other.m_currentAnimIndex;
+        m_currentFrame = other.m_currentFrame;
+        m_animationTimer = other.m_animationTimer;
+        m_isAnimating = other.m_isAnimating;
+
+        // Clear other's animation pointers
+        other.m_animations = nullptr;
+        other.m_animationCount = 0;
 
         TraceLog(LOG_INFO, "Character move-assigned: %s", name.c_str());
     }
@@ -91,6 +116,9 @@ void Character::loadModel(ModelManager& manager, const std::string &path) {
         if (sharedShader.id > 0) {
             applyShader(sharedShader);
         }
+
+        // Load animations from the same file
+        loadAnimations(path);
     } else {
         TraceLog(LOG_ERROR, "Failed to load model");
     }
@@ -139,10 +167,15 @@ void Character::draw() {
 
         // Calcola la matrice di trasformazione
         Matrix matScale = MatrixScale(scale, scale, scale);
-        Matrix matRotation = MatrixRotate(axis, angle * DEG2RAD);
+        Matrix matRotation = MatrixRotate(axis, angle);  // angle is already in radians from QuaternionToAxisAngle
         Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
 
         Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
+
+        // Ensure per-instance animation data is bound for drawing
+        if (modelInstance.hasAnimationData()) {
+            modelInstance.bindAnimationData();
+        }
 
         // Disegna ogni mesh con il suo materiale
         for (int i = 0; i < modelInstance.meshCount(); i++) {
@@ -151,6 +184,11 @@ void Character::draw() {
 
             // DrawMesh applica automaticamente lo shader del materiale
             DrawMesh(modelInstance.meshes()[i], material, transform);
+        }
+
+        // Unbind per-instance data after drawing to restore shared state
+        if (modelInstance.hasAnimationData()) {
+            modelInstance.unbindAnimationData();
         }
     } else {
         DrawCube(position, scale, scale, scale, GREEN);
@@ -181,5 +219,128 @@ void Character::snapToGround(const Model &ground) {
 }
 
 void Character::gui() {}
+
+void Character::loadAnimations(const std::string& modelPath) {
+    // Unload existing animations first
+    unloadAnimations();
+
+    // Load animations from the model file
+    m_animations = LoadModelAnimations(modelPath.c_str(), &m_animationCount);
+
+    if (m_animationCount > 0 && m_animations != nullptr) {
+        TraceLog(LOG_INFO, "Loaded %d animations from '%s':", m_animationCount, modelPath.c_str());
+        for (int i = 0; i < m_animationCount; i++) {
+            TraceLog(LOG_INFO, "  [%d] '%s' (%d frames)", i, m_animations[i].name, m_animations[i].frameCount);
+        }
+
+        // Prepare per-instance animation data so this character can animate independently
+        modelInstance.prepareForAnimation();
+    } else {
+        TraceLog(LOG_WARNING, "No animations found in '%s'", modelPath.c_str());
+    }
+}
+
+void Character::unloadAnimations() {
+    if (m_animations != nullptr && m_animationCount > 0) {
+        UnloadModelAnimations(m_animations, m_animationCount);
+        m_animations = nullptr;
+        m_animationCount = 0;
+    }
+    m_currentAnimIndex = -1;
+    m_currentFrame = 0;
+    m_animationTimer = 0.0f;
+    m_isAnimating = false;
+}
+
+int Character::getAnimationIndex(const std::string& name) const {
+    if (m_animations == nullptr || m_animationCount == 0) {
+        return -1;
+    }
+
+    for (int i = 0; i < m_animationCount; i++) {
+        if (name == m_animations[i].name) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+bool Character::setAnimation(const std::string& animName) {
+    int index = getAnimationIndex(animName);
+    if (index >= 0) {
+        if (m_currentAnimIndex != index) {
+            m_currentAnimIndex = index;
+            m_currentFrame = 0;
+            m_animationTimer = 0.0f;
+            TraceLog(LOG_INFO, "Character '%s': Set animation to '%s' (index %d)",
+                     name.c_str(), animName.c_str(), index);
+        }
+        return true;
+    }
+    TraceLog(LOG_WARNING, "Character '%s': Animation '%s' not found", name.c_str(), animName.c_str());
+    return false;
+}
+
+void Character::playAnimation() {
+    if (m_currentAnimIndex >= 0 && m_currentAnimIndex < m_animationCount) {
+        m_isAnimating = true;
+    }
+}
+
+void Character::stopAnimation() {
+    m_isAnimating = false;
+    m_currentFrame = 0;
+    m_animationTimer = 0.0f;
+}
+
+void Character::updateAnimation() {
+    if (!m_isAnimating || m_currentAnimIndex < 0 || m_currentAnimIndex >= m_animationCount) {
+        return;
+    }
+
+    if (!modelInstance.isValid()) {
+        return;
+    }
+
+    ModelAnimation& anim = m_animations[m_currentAnimIndex];
+
+    // Advance animation timer
+    m_animationTimer += GetFrameTime();
+
+    // Calculate FPS (typically 30 or 60 for most animations)
+    float animFPS = 30.0f;  // Standard animation framerate
+    float frameDuration = 1.0f / animFPS;
+
+    // Advance frame based on timer
+    while (m_animationTimer >= frameDuration) {
+        m_animationTimer -= frameDuration;
+        m_currentFrame++;
+
+        // Loop the animation
+        if (m_currentFrame >= anim.frameCount) {
+            m_currentFrame = 0;
+        }
+    }
+
+    // Bind per-instance animation data so updates go to our instance, not shared data
+    modelInstance.bindAnimationData();
+
+    // Build a temporary Model structure for UpdateModelAnimation
+    // This is needed because the ModelInstance doesn't provide a full Model
+    Model tempModel = {0};
+    tempModel.meshCount = modelInstance.meshCount();
+    tempModel.meshes = modelInstance.meshes();
+    tempModel.materialCount = modelInstance.materialCount();
+    tempModel.materials = modelInstance.materials();
+    tempModel.meshMaterial = modelInstance.meshMaterial();
+    tempModel.boneCount = modelInstance.boneCount();
+    tempModel.bones = modelInstance.bones();
+    tempModel.bindPose = modelInstance.bindPose();
+
+    // Update model animation (writes to our per-instance buffers since we bound them)
+    UpdateModelAnimation(tempModel, anim, m_currentFrame);
+
+    // Note: We leave the data bound - it will be used by draw() and unbound after
+}
 
 } // namespace moiras

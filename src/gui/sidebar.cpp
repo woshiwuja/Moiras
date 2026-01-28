@@ -143,7 +143,7 @@ namespace moiras
 
         bool buildingMode = structureBuilder->isBuildingMode();
 
-        // Stato corrente
+        // Building mode status and controls (shown when active)
         if (buildingMode)
         {
             TextColored(ImVec4(0, 1, 0, 1), "BUILDING MODE ACTIVE");
@@ -158,85 +158,97 @@ namespace moiras
             {
                 structureBuilder->exitBuildingMode();
             }
+
+            Spacing();
         }
         else
         {
             Text("Select an asset to build:");
-            Separator();
+        }
 
-            // Preview dell'asset selezionato
-            Texture2D previewTex = structureBuilder->getPreviewTexture();
-            if (previewTex.id != 0)
+        Separator();
+
+        // Preview dell'asset selezionato (always visible)
+        Texture2D previewTex = structureBuilder->getPreviewTexture();
+        if (previewTex.id != 0)
+        {
+            float previewSize = sidebarWidth - 40;
+            if (previewSize > 180) previewSize = 180;
+
+            rlImGuiImageRect(&previewTex,
+                           (int)previewSize, (int)(previewSize * 0.75f),
+                           (Rectangle){0, 0, (float)previewTex.width, (float)previewTex.height});
+        }
+        else
+        {
+            // Placeholder grigio
+            ImVec2 cursorPos = GetCursorScreenPos();
+            float previewW = sidebarWidth - 40;
+            if (previewW > 180) previewW = 180;
+            float previewH = previewW * 0.75f;
+
+            GetWindowDrawList()->AddRectFilled(
+                cursorPos,
+                ImVec2(cursorPos.x + previewW, cursorPos.y + previewH),
+                IM_COL32(60, 60, 60, 255)
+            );
+            GetWindowDrawList()->AddRect(
+                cursorPos,
+                ImVec2(cursorPos.x + previewW, cursorPos.y + previewH),
+                IM_COL32(100, 100, 100, 255)
+            );
+
+            ImVec2 textSize = CalcTextSize("No Selection");
+            SetCursorScreenPos(ImVec2(
+                cursorPos.x + (previewW - textSize.x) * 0.5f,
+                cursorPos.y + (previewH - textSize.y) * 0.5f
+            ));
+            TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No Selection");
+            SetCursorScreenPos(ImVec2(cursorPos.x, cursorPos.y + previewH + 5));
+        }
+
+        Spacing();
+
+        // Asset list (always visible)
+        Text("Available Assets:");
+
+        const auto& assetList = structureBuilder->getAssetList();
+        int selectedIndex = structureBuilder->getSelectedAssetIndex();
+
+        // Lista scrollabile
+        float listHeight = buildingMode ? 150.0f : 200.0f; // Smaller when in build mode
+        BeginChild("AssetList", ImVec2(0, listHeight), true);
+
+        for (size_t i = 0; i < assetList.size(); i++)
+        {
+            bool isSelected = (selectedIndex == (int)i);
+            if (Selectable(assetList[i].c_str(), isSelected))
             {
-                float previewSize = sidebarWidth - 40;
-                if (previewSize > 180) previewSize = 180;
-
-                rlImGuiImageRect(&previewTex,
-                               (int)previewSize, (int)(previewSize * 0.75f),
-                               (Rectangle){0, 0, (float)previewTex.width, (float)previewTex.height});
-            }
-            else
-            {
-                // Placeholder grigio
-                ImVec2 cursorPos = GetCursorScreenPos();
-                float previewW = sidebarWidth - 40;
-                if (previewW > 180) previewW = 180;
-                float previewH = previewW * 0.75f;
-
-                GetWindowDrawList()->AddRectFilled(
-                    cursorPos,
-                    ImVec2(cursorPos.x + previewW, cursorPos.y + previewH),
-                    IM_COL32(60, 60, 60, 255)
-                );
-                GetWindowDrawList()->AddRect(
-                    cursorPos,
-                    ImVec2(cursorPos.x + previewW, cursorPos.y + previewH),
-                    IM_COL32(100, 100, 100, 255)
-                );
-
-                ImVec2 textSize = CalcTextSize("No Selection");
-                SetCursorScreenPos(ImVec2(
-                    cursorPos.x + (previewW - textSize.x) * 0.5f,
-                    cursorPos.y + (previewH - textSize.y) * 0.5f
-                ));
-                TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No Selection");
-                SetCursorScreenPos(ImVec2(cursorPos.x, cursorPos.y + previewH + 5));
-            }
-
-            Spacing();
-
-            // Lista asset
-            Text("Available Assets:");
-
-            const auto& assetList = structureBuilder->getAssetList();
-            int selectedIndex = structureBuilder->getSelectedAssetIndex();
-
-            // Lista scrollabile
-            float listHeight = 200.0f;
-            BeginChild("AssetList", ImVec2(0, listHeight), true);
-
-            for (size_t i = 0; i < assetList.size(); i++)
-            {
-                bool isSelected = (selectedIndex == (int)i);
-                if (Selectable(assetList[i].c_str(), isSelected))
+                structureBuilder->selectAsset((int)i);
+                // If in building mode, switch to the new asset
+                if (buildingMode)
                 {
-                    structureBuilder->selectAsset((int)i);
+                    structureBuilder->exitBuildingMode();
+                    structureBuilder->enterBuildingMode();
                 }
             }
+        }
 
-            EndChild();
+        EndChild();
 
+        Spacing();
+
+        // Pulsante refresh
+        if (Button("Refresh List", ImVec2(-1, 0)))
+        {
+            structureBuilder->refreshAssetList();
+        }
+
+        // Show Start Building button only when not already in building mode
+        if (!buildingMode)
+        {
             Spacing();
 
-            // Pulsante refresh
-            if (Button("Refresh List", ImVec2(-1, 0)))
-            {
-                structureBuilder->refreshAssetList();
-            }
-
-            Spacing();
-
-            // Pulsante per entrare in building mode
             bool canBuild = (selectedIndex >= 0);
             if (!canBuild)
             {

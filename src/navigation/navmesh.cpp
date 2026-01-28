@@ -8,7 +8,78 @@
 
 namespace moiras {
 
-NavMesh::NavMesh() : m_ctx(nullptr), m_navMesh(nullptr), m_navQuery(nullptr) {
+// ============================================
+// Linear Allocator implementation
+// ============================================
+
+LinearAllocator::LinearAllocator(const size_t cap) : buffer(nullptr), capacity(0), top(0), high(0) {
+    buffer = (unsigned char*)dtAlloc(cap, DT_ALLOC_PERM);
+    capacity = cap;
+}
+
+LinearAllocator::~LinearAllocator() {
+    dtFree(buffer);
+}
+
+void LinearAllocator::reset() {
+    high = (high > top) ? high : top;
+    top = 0;
+}
+
+void* LinearAllocator::alloc(const size_t size) {
+    if (!buffer) return nullptr;
+    if (top + size > capacity) return nullptr;
+    unsigned char* mem = &buffer[top];
+    top += size;
+    return mem;
+}
+
+void LinearAllocator::free(void* /*ptr*/) {
+    // Empty - linear allocator doesn't free individual allocations
+}
+
+// ============================================
+// Tile Cache Compressor implementation (passthrough)
+// ============================================
+
+int TileCacheCompressor::maxCompressedSize(const int bufferSize) {
+    return bufferSize;
+}
+
+dtStatus TileCacheCompressor::compress(const unsigned char* buffer, const int bufferSize,
+                                       unsigned char* compressed, const int /*maxCompressedSize*/, int* compressedSize) {
+    memcpy(compressed, buffer, bufferSize);
+    *compressedSize = bufferSize;
+    return DT_SUCCESS;
+}
+
+dtStatus TileCacheCompressor::decompress(const unsigned char* compressed, const int compressedSize,
+                                         unsigned char* buffer, const int maxBufferSize, int* bufferSize) {
+    if (compressedSize > maxBufferSize) return DT_FAILURE;
+    memcpy(buffer, compressed, compressedSize);
+    *bufferSize = compressedSize;
+    return DT_SUCCESS;
+}
+
+// ============================================
+// Tile Cache Mesh Process implementation
+// ============================================
+
+void TileCacheMeshProcess::process(struct dtNavMeshCreateParams* params,
+                                   unsigned char* polyAreas, unsigned short* polyFlags) {
+    // Set all polygons as walkable
+    for (int i = 0; i < params->polyCount; ++i) {
+        polyAreas[i] = DT_TILECACHE_WALKABLE_AREA;
+        polyFlags[i] = 1; // Walkable flag
+    }
+}
+
+// ============================================
+// NavMesh implementation
+// ============================================
+
+NavMesh::NavMesh() : m_ctx(nullptr), m_navMesh(nullptr), m_navQuery(nullptr),
+                     m_tileCache(nullptr), m_talloc(nullptr), m_tcomp(nullptr), m_tmproc(nullptr) {
     m_ctx = new rcContext();
     m_navQuery = dtAllocNavMeshQuery();
     memset(&m_cfg, 0, sizeof(m_cfg));
@@ -16,11 +87,15 @@ NavMesh::NavMesh() : m_ctx(nullptr), m_navMesh(nullptr), m_navQuery(nullptr) {
 
 NavMesh::~NavMesh() {
     cleanupTileDebugData();
+    if (m_tileCache) dtFreeTileCache(m_tileCache);
     if (m_navMesh) dtFreeNavMesh(m_navMesh);
     if (m_navQuery) dtFreeNavMeshQuery(m_navQuery);
     if (m_debugModel.meshCount > 0) {
         UnloadModel(m_debugModel);
     }
+    delete m_talloc;
+    delete m_tcomp;
+    delete m_tmproc;
     delete m_ctx;
 }
 
@@ -97,6 +172,202 @@ bool NavMesh::initNavMesh() {
     }
 
     return true;
+}
+
+bool NavMesh::initTileCache() {
+    // Clean up existing tile cache
+    if (m_tileCache) {
+        dtFreeTileCache(m_tileCache);
+        m_tileCache = nullptr;
+    }
+
+    // Create allocator, compressor and mesh processor
+    delete m_talloc;
+    delete m_tcomp;
+    delete m_tmproc;
+
+    // Allocator needs enough memory for tile operations
+    // Larger maps need more memory
+    const size_t allocSize = 64 * 1024; // 64KB should be sufficient
+    m_talloc = new LinearAllocator(allocSize);
+    m_tcomp = new TileCacheCompressor();
+    m_tmproc = new TileCacheMeshProcess();
+
+    // Allocate tile cache
+    m_tileCache = dtAllocTileCache();
+    if (!m_tileCache) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to allocate tile cache");
+        return false;
+    }
+
+    // Setup tile cache params
+    dtTileCacheParams tcparams;
+    memset(&tcparams, 0, sizeof(tcparams));
+    rcVcopy(tcparams.orig, m_boundsMin);
+    tcparams.cs = m_cellSize;
+    tcparams.ch = m_cellHeight;
+    tcparams.width = m_cfg.tileSize;  // Tile size in cells
+    tcparams.height = m_cfg.tileSize; // Tile size in cells
+    tcparams.walkableHeight = m_agentHeight;
+    tcparams.walkableRadius = m_agentRadius;
+    tcparams.walkableClimb = m_agentMaxClimb;
+    tcparams.maxSimplificationError = m_maxSimplificationError;
+
+    // Calculate max tiles - need extra for layers
+    const int EXPECTED_LAYERS_PER_TILE = 4;
+    tcparams.maxTiles = m_tilesX * m_tilesZ * EXPECTED_LAYERS_PER_TILE;
+    tcparams.maxObstacles = 256; // Increase max obstacles
+
+    dtStatus status = m_tileCache->init(&tcparams, m_talloc, m_tcomp, m_tmproc);
+    if (dtStatusFailed(status)) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to init tile cache");
+        return false;
+    }
+
+    TraceLog(LOG_INFO, "NavMesh: Tile cache initialized:");
+    TraceLog(LOG_INFO, "  - origin: (%.2f, %.2f, %.2f)", tcparams.orig[0], tcparams.orig[1], tcparams.orig[2]);
+    TraceLog(LOG_INFO, "  - cellSize: %.3f, cellHeight: %.3f", tcparams.cs, tcparams.ch);
+    TraceLog(LOG_INFO, "  - tileSize: %d x %d cells", tcparams.width, tcparams.height);
+    TraceLog(LOG_INFO, "  - walkableHeight: %.2f, radius: %.2f, climb: %.2f",
+             tcparams.walkableHeight, tcparams.walkableRadius, tcparams.walkableClimb);
+    TraceLog(LOG_INFO, "  - maxTiles: %d, maxObstacles: %d", tcparams.maxTiles, tcparams.maxObstacles);
+
+    return true;
+}
+
+int NavMesh::rasterizeTileLayers(int tileX, int tileY, const rcConfig& cfg,
+                                  TileCacheData* tiles, int maxTiles) {
+    // Calculate tile bounds with border
+    float tileBmin[3], tileBmax[3];
+
+    tileBmin[0] = m_boundsMin[0] + tileX * m_tileSize;
+    tileBmin[1] = m_boundsMin[1];
+    tileBmin[2] = m_boundsMin[2] + tileY * m_tileSize;
+
+    tileBmax[0] = m_boundsMin[0] + (tileX + 1) * m_tileSize;
+    tileBmax[1] = m_boundsMax[1];
+    tileBmax[2] = m_boundsMin[2] + (tileY + 1) * m_tileSize;
+
+    // Expand for border
+    float borderSize = cfg.borderSize * cfg.cs;
+    tileBmin[0] -= borderSize;
+    tileBmin[2] -= borderSize;
+    tileBmax[0] += borderSize;
+    tileBmax[2] += borderSize;
+
+    // Setup config for this tile
+    rcConfig tileCfg = cfg;
+    rcVcopy(tileCfg.bmin, tileBmin);
+    rcVcopy(tileCfg.bmax, tileBmax);
+
+    rcCalcGridSize(tileCfg.bmin, tileCfg.bmax, tileCfg.cs, &tileCfg.width, &tileCfg.height);
+
+    // If tile is too small, skip
+    if (tileCfg.width < 3 || tileCfg.height < 3) {
+        return 0;
+    }
+
+    // 1. Create heightfield
+    rcHeightfield* hf = rcAllocHeightfield();
+    if (!hf) return 0;
+
+    if (!rcCreateHeightfield(m_ctx, *hf, tileCfg.width, tileCfg.height,
+                             tileCfg.bmin, tileCfg.bmax, tileCfg.cs, tileCfg.ch)) {
+        rcFreeHeightField(hf);
+        return 0;
+    }
+
+    // Rasterize triangles
+    unsigned char* areas = new unsigned char[m_storedTriCount];
+    memset(areas, 0, m_storedTriCount);
+
+    rcMarkWalkableTriangles(m_ctx, tileCfg.walkableSlopeAngle,
+                            m_storedVerts.data(), m_storedVertCount,
+                            m_storedTris.data(), m_storedTriCount, areas);
+
+    if (!rcRasterizeTriangles(m_ctx, m_storedVerts.data(), m_storedVertCount,
+                              m_storedTris.data(), areas, m_storedTriCount,
+                              *hf, tileCfg.walkableClimb)) {
+        delete[] areas;
+        rcFreeHeightField(hf);
+        return 0;
+    }
+    delete[] areas;
+
+    // 2. Filtering
+    rcFilterLowHangingWalkableObstacles(m_ctx, tileCfg.walkableClimb, *hf);
+    rcFilterLedgeSpans(m_ctx, tileCfg.walkableHeight, tileCfg.walkableClimb, *hf);
+    rcFilterWalkableLowHeightSpans(m_ctx, tileCfg.walkableHeight, *hf);
+
+    // 3. Compact heightfield
+    rcCompactHeightfield* chf = rcAllocCompactHeightfield();
+    if (!chf) {
+        rcFreeHeightField(hf);
+        return 0;
+    }
+
+    if (!rcBuildCompactHeightfield(m_ctx, tileCfg.walkableHeight, tileCfg.walkableClimb, *hf, *chf)) {
+        rcFreeHeightField(hf);
+        rcFreeCompactHeightfield(chf);
+        return 0;
+    }
+    rcFreeHeightField(hf);
+
+    // 4. Erode walkable area
+    if (!rcErodeWalkableArea(m_ctx, tileCfg.walkableRadius, *chf)) {
+        rcFreeCompactHeightfield(chf);
+        return 0;
+    }
+
+    // 5. Build heightfield layers
+    rcHeightfieldLayerSet* lset = rcAllocHeightfieldLayerSet();
+    if (!lset) {
+        rcFreeCompactHeightfield(chf);
+        return 0;
+    }
+
+    if (!rcBuildHeightfieldLayers(m_ctx, *chf, tileCfg.borderSize, tileCfg.walkableHeight, *lset)) {
+        rcFreeCompactHeightfield(chf);
+        rcFreeHeightfieldLayerSet(lset);
+        return 0;
+    }
+
+    rcFreeCompactHeightfield(chf);
+
+    // Build tile cache layers from heightfield layers
+    int ntiles = 0;
+    for (int i = 0; i < rcMin(lset->nlayers, maxTiles); ++i) {
+        const rcHeightfieldLayer* layer = &lset->layers[i];
+
+        dtTileCacheLayerHeader header;
+        header.magic = DT_TILECACHE_MAGIC;
+        header.version = DT_TILECACHE_VERSION;
+
+        header.tx = tileX;
+        header.ty = tileY;
+        header.tlayer = i;
+        rcVcopy(header.bmin, layer->bmin);
+        rcVcopy(header.bmax, layer->bmax);
+
+        header.width = (unsigned char)layer->width;
+        header.height = (unsigned char)layer->height;
+        header.minx = (unsigned char)layer->minx;
+        header.maxx = (unsigned char)layer->maxx;
+        header.miny = (unsigned char)layer->miny;
+        header.maxy = (unsigned char)layer->maxy;
+        header.hmin = (unsigned short)layer->hmin;
+        header.hmax = (unsigned short)layer->hmax;
+
+        dtStatus status = dtBuildTileCacheLayer(m_tcomp, &header, layer->heights, layer->areas, layer->cons,
+                                                &tiles[ntiles].data, &tiles[ntiles].dataSize);
+        if (dtStatusSucceed(status)) {
+            ntiles++;
+        }
+    }
+
+    rcFreeHeightfieldLayerSet(lset);
+
+    return ntiles;
 }
 
 bool NavMesh::buildTiled(const Mesh& mesh, Matrix transform) {
@@ -232,21 +503,58 @@ bool NavMesh::buildTiled(const Mesh& mesh, Matrix transform) {
         return false;
     }
 
-    // Costruisci tutte le tile
+    // Initialize tile cache for dynamic obstacles
+    if (!initTileCache()) {
+        return false;
+    }
+
+    // Build tile cache layers and navmesh tiles
     int builtTiles = 0;
     double startTime = GetTime();
 
+    const int MAX_LAYERS = 32;
+    TileCacheData tiles[MAX_LAYERS];
+
     for (int y = 0; y < m_tilesZ; y++) {
         for (int x = 0; x < m_tilesX; x++) {
-            if (buildTile(x, y)) {
-                builtTiles++;
+            // Build tile cache layers for this tile
+            int ntiles = rasterizeTileLayers(x, y, m_cfg, tiles, MAX_LAYERS);
+
+            // Add layers to tile cache
+            for (int i = 0; i < ntiles; ++i) {
+                dtStatus status = m_tileCache->addTile(tiles[i].data, tiles[i].dataSize,
+                                                       DT_COMPRESSEDTILE_FREE_DATA, 0);
+                if (dtStatusFailed(status)) {
+                    dtFree(tiles[i].data);
+                    tiles[i].data = nullptr;
+                }
             }
+
+            builtTiles++;
+        }
+    }
+
+    // Build initial navmesh tiles from the tile cache
+    for (int y = 0; y < m_tilesZ; y++) {
+        for (int x = 0; x < m_tilesX; x++) {
+            m_tileCache->buildNavMeshTilesAt(x, y, m_navMesh);
         }
     }
 
     double elapsed = GetTime() - startTime;
 
-    TraceLog(LOG_INFO, "NavMesh: Built %d/%d tiles in %.2f seconds",
+    // Count actual polygons
+    m_totalPolygons = 0;
+    const dtNavMesh* navMesh = m_navMesh;
+    int maxTiles = navMesh->getMaxTiles();
+    for (int i = 0; i < maxTiles; i++) {
+        const dtMeshTile* tile = navMesh->getTile(i);
+        if (tile && tile->header) {
+            m_totalPolygons += tile->header->polyCount;
+        }
+    }
+
+    TraceLog(LOG_INFO, "NavMesh: Built %d/%d tiles in %.2f seconds (using TileCache)",
              builtTiles, totalTiles, elapsed);
     TraceLog(LOG_INFO, "NavMesh: Total polygons: %d", m_totalPolygons);
 
@@ -947,6 +1255,146 @@ bool NavMesh::loadFromFile(const std::string& filename) {
              filename.c_str(), m_tileCount, m_totalPolygons);
 
     return m_tileCount > 0;
+}
+
+// ============================================
+// Obstacle management (using dtTileCache)
+// ============================================
+
+dtObstacleRef NavMesh::addObstacle(BoundingBox bounds) {
+    if (!m_tileCache) {
+        TraceLog(LOG_ERROR, "NavMesh: Tile cache not initialized - cannot add obstacle");
+        return 0;
+    }
+
+    // Convert raylib BoundingBox to float arrays
+    float bmin[3] = { bounds.min.x, bounds.min.y, bounds.min.z };
+    float bmax[3] = { bounds.max.x, bounds.max.y, bounds.max.z };
+
+    // Verify the obstacle is within the navmesh bounds
+    if (bmax[0] < m_boundsMin[0] || bmin[0] > m_boundsMax[0] ||
+        bmax[2] < m_boundsMin[2] || bmin[2] > m_boundsMax[2]) {
+        TraceLog(LOG_WARNING, "NavMesh: Obstacle at (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) is outside navmesh bounds (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)",
+                 bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2],
+                 m_boundsMin[0], m_boundsMin[1], m_boundsMin[2],
+                 m_boundsMax[0], m_boundsMax[1], m_boundsMax[2]);
+    }
+
+    // Log current obstacle count
+    int obstacleCount = m_tileCache->getObstacleCount();
+    TraceLog(LOG_INFO, "NavMesh: Adding obstacle (current count: %d, max: %d)",
+             obstacleCount, m_tileCache->getParams()->maxObstacles);
+
+    // Log which tiles this obstacle will affect
+    std::vector<TileCoord> affectedTiles = getAffectedTiles(bounds);
+    TraceLog(LOG_INFO, "NavMesh: Obstacle will affect %d tiles:", (int)affectedTiles.size());
+    for (const auto& tc : affectedTiles) {
+        TraceLog(LOG_INFO, "  - Tile (%d, %d)", tc.x, tc.y);
+    }
+
+    dtObstacleRef ref = 0;
+    dtStatus status = m_tileCache->addBoxObstacle(bmin, bmax, &ref);
+
+    if (dtStatusFailed(status)) {
+        TraceLog(LOG_ERROR, "NavMesh: Failed to add obstacle at (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f), status=%u",
+                 bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2], status);
+        return 0;
+    }
+
+    TraceLog(LOG_INFO, "NavMesh: Added obstacle ref=%u at (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f)",
+             ref, bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
+
+    // Check obstacle state
+    const dtTileCacheObstacle* ob = m_tileCache->getObstacleByRef(ref);
+    if (ob) {
+        const char* stateStr = "unknown";
+        switch (ob->state) {
+            case DT_OBSTACLE_EMPTY: stateStr = "EMPTY"; break;
+            case DT_OBSTACLE_PROCESSING: stateStr = "PROCESSING"; break;
+            case DT_OBSTACLE_PROCESSED: stateStr = "PROCESSED"; break;
+            case DT_OBSTACLE_REMOVING: stateStr = "REMOVING"; break;
+        }
+        TraceLog(LOG_INFO, "NavMesh: Obstacle state=%s, type=%d, touched=%d, pending=%d",
+                 stateStr, ob->type, ob->ntouched, ob->npending);
+    }
+
+    // Invalidate debug mesh
+    m_debugMeshBuilt = false;
+
+    return ref;
+}
+
+bool NavMesh::removeObstacle(dtObstacleRef ref) {
+    if (!m_tileCache) {
+        TraceLog(LOG_ERROR, "NavMesh: Tile cache not initialized - cannot remove obstacle");
+        return false;
+    }
+
+    dtStatus status = m_tileCache->removeObstacle(ref);
+
+    if (dtStatusFailed(status)) {
+        TraceLog(LOG_WARNING, "NavMesh: Failed to remove obstacle ref=%u", ref);
+        return false;
+    }
+
+    TraceLog(LOG_INFO, "NavMesh: Removed obstacle ref=%u", ref);
+
+    // Invalidate debug mesh
+    m_debugMeshBuilt = false;
+
+    return true;
+}
+
+void NavMesh::update(float dt) {
+    if (!m_tileCache || !m_navMesh) {
+        return;
+    }
+
+    // Process all pending tile cache operations
+    // The update function only processes one request at a time, so we loop
+    const int MAX_UPDATES = 100; // Safety limit
+    int updateCount = 0;
+    bool upToDate = false;
+
+    while (!upToDate && updateCount < MAX_UPDATES) {
+        dtStatus status = m_tileCache->update(dt, m_navMesh, &upToDate);
+
+        if (dtStatusFailed(status)) {
+            TraceLog(LOG_WARNING, "NavMesh: TileCache update failed with status %u", status);
+            break;
+        }
+
+        updateCount++;
+    }
+
+    // Log if we processed any updates
+    if (updateCount > 0) {
+        TraceLog(LOG_INFO, "NavMesh: Processed %d tile cache updates (upToDate: %s)",
+                 updateCount, upToDate ? "yes" : "no");
+        m_debugMeshBuilt = false; // Force debug mesh rebuild
+    }
+}
+
+std::vector<TileCoord> NavMesh::getAffectedTiles(BoundingBox bounds) const {
+    std::vector<TileCoord> tiles;
+
+    if (m_tileSize <= 0) return tiles;
+
+    // Get tile coordinates for min and max corners
+    TileCoord minTile = getTileCoordAt(bounds.min);
+    TileCoord maxTile = getTileCoordAt(bounds.max);
+
+    // Enumerate all tiles in the range
+    for (int x = minTile.x; x <= maxTile.x; x++) {
+        for (int y = minTile.y; y <= maxTile.y; y++) {
+            // Check if tile is within valid range
+            if (x >= 0 && x < m_tilesX && y >= 0 && y < m_tilesZ) {
+                tiles.push_back({x, y});
+            }
+        }
+    }
+
+    return tiles;
 }
 
 } // namespace moiras

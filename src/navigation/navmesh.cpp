@@ -319,7 +319,19 @@ int NavMesh::rasterizeTileLayers(int tileX, int tileY, const rcConfig& cfg,
         return 0;
     }
 
-    // 5. Build heightfield layers
+    // 5. Build distance field (required for regions and layers)
+    if (!rcBuildDistanceField(m_ctx, *chf)) {
+        rcFreeCompactHeightfield(chf);
+        return 0;
+    }
+
+    // 6. Build regions (required for heightfield layers)
+    if (!rcBuildRegions(m_ctx, *chf, tileCfg.borderSize, tileCfg.minRegionArea, tileCfg.mergeRegionArea)) {
+        rcFreeCompactHeightfield(chf);
+        return 0;
+    }
+
+    // 7. Build heightfield layers
     rcHeightfieldLayerSet* lset = rcAllocHeightfieldLayerSet();
     if (!lset) {
         rcFreeCompactHeightfield(chf);

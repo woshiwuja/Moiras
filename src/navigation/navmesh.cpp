@@ -186,7 +186,10 @@ bool NavMesh::initTileCache() {
     delete m_tcomp;
     delete m_tmproc;
 
-    m_talloc = new LinearAllocator(32000);
+    // Allocator needs enough memory for tile operations
+    // Larger maps need more memory
+    const size_t allocSize = 64 * 1024; // 64KB should be sufficient
+    m_talloc = new LinearAllocator(allocSize);
     m_tcomp = new TileCacheCompressor();
     m_tmproc = new TileCacheMeshProcess();
 
@@ -203,8 +206,8 @@ bool NavMesh::initTileCache() {
     rcVcopy(tcparams.orig, m_boundsMin);
     tcparams.cs = m_cellSize;
     tcparams.ch = m_cellHeight;
-    tcparams.width = m_cfg.tileSize;
-    tcparams.height = m_cfg.tileSize;
+    tcparams.width = m_cfg.tileSize;  // Tile size in cells
+    tcparams.height = m_cfg.tileSize; // Tile size in cells
     tcparams.walkableHeight = m_agentHeight;
     tcparams.walkableRadius = m_agentRadius;
     tcparams.walkableClimb = m_agentMaxClimb;
@@ -213,7 +216,7 @@ bool NavMesh::initTileCache() {
     // Calculate max tiles - need extra for layers
     const int EXPECTED_LAYERS_PER_TILE = 4;
     tcparams.maxTiles = m_tilesX * m_tilesZ * EXPECTED_LAYERS_PER_TILE;
-    tcparams.maxObstacles = 128;
+    tcparams.maxObstacles = 256; // Increase max obstacles
 
     dtStatus status = m_tileCache->init(&tcparams, m_talloc, m_tcomp, m_tmproc);
     if (dtStatusFailed(status)) {
@@ -221,8 +224,13 @@ bool NavMesh::initTileCache() {
         return false;
     }
 
-    TraceLog(LOG_INFO, "NavMesh: Tile cache initialized (maxTiles: %d, maxObstacles: %d)",
-             tcparams.maxTiles, tcparams.maxObstacles);
+    TraceLog(LOG_INFO, "NavMesh: Tile cache initialized:");
+    TraceLog(LOG_INFO, "  - origin: (%.2f, %.2f, %.2f)", tcparams.orig[0], tcparams.orig[1], tcparams.orig[2]);
+    TraceLog(LOG_INFO, "  - cellSize: %.3f, cellHeight: %.3f", tcparams.cs, tcparams.ch);
+    TraceLog(LOG_INFO, "  - tileSize: %d x %d cells", tcparams.width, tcparams.height);
+    TraceLog(LOG_INFO, "  - walkableHeight: %.2f, radius: %.2f, climb: %.2f",
+             tcparams.walkableHeight, tcparams.walkableRadius, tcparams.walkableClimb);
+    TraceLog(LOG_INFO, "  - maxTiles: %d, maxObstacles: %d", tcparams.maxTiles, tcparams.maxObstacles);
 
     return true;
 }
@@ -1263,17 +1271,52 @@ dtObstacleRef NavMesh::addObstacle(BoundingBox bounds) {
     float bmin[3] = { bounds.min.x, bounds.min.y, bounds.min.z };
     float bmax[3] = { bounds.max.x, bounds.max.y, bounds.max.z };
 
+    // Verify the obstacle is within the navmesh bounds
+    if (bmax[0] < m_boundsMin[0] || bmin[0] > m_boundsMax[0] ||
+        bmax[2] < m_boundsMin[2] || bmin[2] > m_boundsMax[2]) {
+        TraceLog(LOG_WARNING, "NavMesh: Obstacle at (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) is outside navmesh bounds (%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)",
+                 bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2],
+                 m_boundsMin[0], m_boundsMin[1], m_boundsMin[2],
+                 m_boundsMax[0], m_boundsMax[1], m_boundsMax[2]);
+    }
+
+    // Log current obstacle count
+    int obstacleCount = m_tileCache->getObstacleCount();
+    TraceLog(LOG_INFO, "NavMesh: Adding obstacle (current count: %d, max: %d)",
+             obstacleCount, m_tileCache->getParams()->maxObstacles);
+
+    // Log which tiles this obstacle will affect
+    std::vector<TileCoord> affectedTiles = getAffectedTiles(bounds);
+    TraceLog(LOG_INFO, "NavMesh: Obstacle will affect %d tiles:", (int)affectedTiles.size());
+    for (const auto& tc : affectedTiles) {
+        TraceLog(LOG_INFO, "  - Tile (%d, %d)", tc.x, tc.y);
+    }
+
     dtObstacleRef ref = 0;
     dtStatus status = m_tileCache->addBoxObstacle(bmin, bmax, &ref);
 
     if (dtStatusFailed(status)) {
-        TraceLog(LOG_ERROR, "NavMesh: Failed to add obstacle at (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f)",
-                 bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
+        TraceLog(LOG_ERROR, "NavMesh: Failed to add obstacle at (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f), status=%u",
+                 bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2], status);
         return 0;
     }
 
     TraceLog(LOG_INFO, "NavMesh: Added obstacle ref=%u at (%.1f,%.1f,%.1f) - (%.1f,%.1f,%.1f)",
              ref, bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2]);
+
+    // Check obstacle state
+    const dtTileCacheObstacle* ob = m_tileCache->getObstacleByRef(ref);
+    if (ob) {
+        const char* stateStr = "unknown";
+        switch (ob->state) {
+            case DT_OBSTACLE_EMPTY: stateStr = "EMPTY"; break;
+            case DT_OBSTACLE_PROCESSING: stateStr = "PROCESSING"; break;
+            case DT_OBSTACLE_PROCESSED: stateStr = "PROCESSED"; break;
+            case DT_OBSTACLE_REMOVING: stateStr = "REMOVING"; break;
+        }
+        TraceLog(LOG_INFO, "NavMesh: Obstacle state=%s, type=%d, touched=%d, pending=%d",
+                 stateStr, ob->type, ob->ntouched, ob->npending);
+    }
 
     // Invalidate debug mesh
     m_debugMeshBuilt = false;
@@ -1307,13 +1350,28 @@ void NavMesh::update(float dt) {
         return;
     }
 
-    // Update the tile cache, which will rebuild affected tiles
+    // Process all pending tile cache operations
+    // The update function only processes one request at a time, so we loop
+    const int MAX_UPDATES = 100; // Safety limit
+    int updateCount = 0;
     bool upToDate = false;
-    m_tileCache->update(dt, m_navMesh, &upToDate);
 
-    // If tiles were updated, invalidate debug mesh
-    if (!upToDate) {
-        m_debugMeshBuilt = false;
+    while (!upToDate && updateCount < MAX_UPDATES) {
+        dtStatus status = m_tileCache->update(dt, m_navMesh, &upToDate);
+
+        if (dtStatusFailed(status)) {
+            TraceLog(LOG_WARNING, "NavMesh: TileCache update failed with status %u", status);
+            break;
+        }
+
+        updateCount++;
+    }
+
+    // Log if we processed any updates
+    if (updateCount > 0) {
+        TraceLog(LOG_INFO, "NavMesh: Processed %d tile cache updates (upToDate: %s)",
+                 updateCount, upToDate ? "yes" : "no");
+        m_debugMeshBuilt = false; // Force debug mesh rebuild
     }
 }
 

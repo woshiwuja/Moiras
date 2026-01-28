@@ -172,6 +172,11 @@ void Character::draw() {
 
         Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
+        // Ensure per-instance animation data is bound for drawing
+        if (modelInstance.hasAnimationData()) {
+            modelInstance.bindAnimationData();
+        }
+
         // Disegna ogni mesh con il suo materiale
         for (int i = 0; i < modelInstance.meshCount(); i++) {
             int materialIndex = modelInstance.meshMaterial()[i];
@@ -179,6 +184,11 @@ void Character::draw() {
 
             // DrawMesh applica automaticamente lo shader del materiale
             DrawMesh(modelInstance.meshes()[i], material, transform);
+        }
+
+        // Unbind per-instance data after drawing to restore shared state
+        if (modelInstance.hasAnimationData()) {
+            modelInstance.unbindAnimationData();
         }
     } else {
         DrawCube(position, scale, scale, scale, GREEN);
@@ -222,6 +232,9 @@ void Character::loadAnimations(const std::string& modelPath) {
         for (int i = 0; i < m_animationCount; i++) {
             TraceLog(LOG_INFO, "  [%d] '%s' (%d frames)", i, m_animations[i].name, m_animations[i].frameCount);
         }
+
+        // Prepare per-instance animation data so this character can animate independently
+        modelInstance.prepareForAnimation();
     } else {
         TraceLog(LOG_WARNING, "No animations found in '%s'", modelPath.c_str());
     }
@@ -309,6 +322,9 @@ void Character::updateAnimation() {
         }
     }
 
+    // Bind per-instance animation data so updates go to our instance, not shared data
+    modelInstance.bindAnimationData();
+
     // Build a temporary Model structure for UpdateModelAnimation
     // This is needed because the ModelInstance doesn't provide a full Model
     Model tempModel = {0};
@@ -321,8 +337,10 @@ void Character::updateAnimation() {
     tempModel.bones = modelInstance.bones();
     tempModel.bindPose = modelInstance.bindPose();
 
-    // Update model animation
+    // Update model animation (writes to our per-instance buffers since we bound them)
     UpdateModelAnimation(tempModel, anim, m_currentFrame);
+
+    // Note: We leave the data bound - it will be used by draw() and unbound after
 }
 
 } // namespace moiras

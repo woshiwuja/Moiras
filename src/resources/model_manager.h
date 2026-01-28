@@ -33,10 +33,10 @@ public:
     ModelInstance& operator=(const ModelInstance&) = delete;
 
     // Check if valid
-    bool isValid() const { return m_meshes != nullptr && m_meshCount > 0; }
+    bool isValid() const { return m_sharedMeshes != nullptr && m_meshCount > 0; }
 
-    // Access shared mesh data (read-only)
-    Mesh* meshes() const { return m_meshes; }
+    // Access mesh data (returns local meshes if prepared for animation, otherwise shared)
+    Mesh* meshes() const { return m_localMeshes != nullptr ? m_localMeshes : m_sharedMeshes; }
     int meshCount() const { return m_meshCount; }
     int* meshMaterial() const { return m_meshMaterial; }
 
@@ -76,7 +76,7 @@ public:
     void unbindAnimationData();
 
     // Check if animation data is allocated
-    bool hasAnimationData() const { return !m_animData.empty(); }
+    bool hasAnimationData() const { return m_localMeshes != nullptr; }
 
 private:
     friend class ModelManager;
@@ -94,9 +94,12 @@ private:
     std::string m_path;
 
     // Shared mesh data (owned by ModelManager)
-    Mesh* m_meshes = nullptr;
+    Mesh* m_sharedMeshes = nullptr;
     int m_meshCount = 0;
     int* m_meshMaterial = nullptr;
+
+    // Per-instance mesh structures (for animation - pointers to shared vertex data but own animation buffers)
+    Mesh* m_localMeshes = nullptr;
 
     // Shared bone data for animations (owned by ModelManager)
     BoneInfo* m_bones = nullptr;
@@ -112,15 +115,6 @@ private:
 
     // Per-instance animation data for each mesh (owned by this instance)
     std::vector<MeshAnimationData> m_animData;
-
-    // Backup of shared mesh animation pointers (for unbind)
-    struct MeshAnimBackup {
-        float* animVertices;
-        float* animNormals;
-        Matrix* boneMatrices;
-    };
-    std::vector<MeshAnimBackup> m_animBackup;
-    bool m_animBound = false;
 };
 
 // ModelManager - caches models, shares mesh data, provides instances

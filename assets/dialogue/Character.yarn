@@ -1,0 +1,17 @@
+title:  Mesars_Ortik
+---
+The fuck you want vermin?
+
+-> I need your help.
+    Get the fuck out.
+-> Chill out big guy.
+    What the fuck did you just say?
+    -> To chill out.
+        Uh. Maybe you are right.
+        -> Wanna join me?
+            Sure.
+            <<join_squad>>
+        -> Goodbye.
+    -> Nothing!
+        You better. Now get the fuck out.
+===

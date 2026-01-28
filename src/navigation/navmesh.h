@@ -6,9 +6,9 @@
 #include "DetourTileCacheBuilder.h"
 #include "Recast.h"
 #include <raylib.h>
-#include <vector>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include <raymath.h>
 namespace moiras {
@@ -18,7 +18,7 @@ struct TileCoord {
   int x;
   int y;
 
-  bool operator==(const TileCoord& other) const {
+  bool operator==(const TileCoord &other) const {
     return x == other.x && y == other.y;
   }
 };
@@ -31,7 +31,7 @@ struct NavMeshObstacle {
 
 // Hash per TileCoord
 struct TileCoordHash {
-  std::size_t operator()(const TileCoord& tc) const {
+  std::size_t operator()(const TileCoord &tc) const {
     return std::hash<int>()(tc.x) ^ (std::hash<int>()(tc.y) << 16);
   }
 };
@@ -41,194 +41,114 @@ struct TileCoordHash {
 // ============================================
 
 // Linear allocator for tile cache
-struct LinearAllocator : public dtTileCacheAlloc
-{
-    unsigned char* buffer;
-    size_t capacity;
-    size_t top;
-    size_t high;
+struct LinearAllocator : public dtTileCacheAlloc {
+  unsigned char *buffer;
+  size_t capacity;
+  size_t top;
+  size_t high;
 
-    LinearAllocator(const size_t cap);
-    ~LinearAllocator();
+  LinearAllocator(const size_t cap);
+  ~LinearAllocator();
 
-    void reset() override;
-    void* alloc(const size_t size) override;
-    void free(void* ptr) override;
+  void reset() override;
+  void *alloc(const size_t size) override;
+  void free(void *ptr) override;
 };
 
 // Simple compressor (passthrough - no actual compression)
-struct TileCacheCompressor : public dtTileCacheCompressor
-{
-    int maxCompressedSize(const int bufferSize) override;
-    dtStatus compress(const unsigned char* buffer, const int bufferSize,
-                     unsigned char* compressed, const int maxCompressedSize, int* compressedSize) override;
-    dtStatus decompress(const unsigned char* compressed, const int compressedSize,
-                       unsigned char* buffer, const int maxBufferSize, int* bufferSize) override;
+struct TileCacheCompressor : public dtTileCacheCompressor {
+  int maxCompressedSize(const int bufferSize) override;
+  dtStatus compress(const unsigned char *buffer, const int bufferSize,
+                    unsigned char *compressed, const int maxCompressedSize,
+                    int *compressedSize) override;
+  dtStatus decompress(const unsigned char *compressed, const int compressedSize,
+                      unsigned char *buffer, const int maxBufferSize,
+                      int *bufferSize) override;
 };
 
 // Mesh processor for tile cache
-struct TileCacheMeshProcess : public dtTileCacheMeshProcess
-{
-    void process(struct dtNavMeshCreateParams* params,
-                unsigned char* polyAreas, unsigned short* polyFlags) override;
+struct TileCacheMeshProcess : public dtTileCacheMeshProcess {
+  void process(struct dtNavMeshCreateParams *params, unsigned char *polyAreas,
+               unsigned short *polyFlags) override;
 };
 
 class NavMesh {
 public:
   NavMesh();
   ~NavMesh();
-
-  // Build monolitico (legacy - ora chiama buildTiled internamente)
   bool build(const Mesh &mesh, Matrix transform = MatrixIdentity());
-
-  // Build tiled - divide la mesh in tile e le costruisce
   bool buildTiled(const Mesh &mesh, Matrix transform = MatrixIdentity());
-
-  // Costruisce una singola tile
   bool buildTile(int tileX, int tileY);
-
-  // Rimuove una tile
   bool removeTile(int tileX, int tileY);
-
-  // Ricostruisce una tile (utile per aggiornamenti dinamici)
   bool rebuildTile(int tileX, int tileY);
-
-  // Ottiene le coordinate tile da una posizione world
   TileCoord getTileCoordAt(Vector3 worldPos) const;
-
-  // Pathfinding
   std::vector<Vector3> findPath(Vector3 start, Vector3 end);
-
-  // Debug
   void drawDebug();
-
-  // Salvataggio/caricamento binario
-  bool saveToFile(const std::string& filename);
-  bool loadFromFile(const std::string& filename);
-
-  // Proietta un punto sulla navmesh
-  bool projectPointToNavMesh(Vector3 point, Vector3& projectedPoint);
-
-  // Configura parametri per mappe di diverse dimensioni
+  bool saveToFile(const std::string &filename);
+  bool loadFromFile(const std::string &filename);
+  bool projectPointToNavMesh(Vector3 point, Vector3 &projectedPoint);
   void setParametersForMapSize(float mapSize);
-
-  // ============================================
-  // Obstacle management (rebuilds affected tiles)
-  // ============================================
-
-  // Add a box obstacle and return its ID (rebuilds affected tiles)
   unsigned int addObstacle(BoundingBox bounds);
-
-  // Remove an obstacle by ID (rebuilds affected tiles)
   bool removeObstacle(unsigned int obstacleId);
-
-  // Get tiles affected by a bounding box
   std::vector<TileCoord> getAffectedTiles(BoundingBox bounds) const;
-
-  // ============================================
-  // Parametri navmesh
-  // ============================================
-
-  // Parametri celle
   float m_cellSize = 0.5f;
   float m_cellHeight = 0.3f;
-
-  // Parametri agente
   float m_agentHeight = 2.0f;
   float m_agentRadius = 0.8f;
   float m_agentMaxClimb = 1.0f;
   float m_agentMaxSlope = 40.0f;
-
-  // Parametri filtraggio regioni
   float m_minRegionArea = 8.0f;
   float m_mergeRegionArea = 20.0f;
   float m_maxSimplificationError = 1.3f;
-
-  // ============================================
-  // Parametri tiling
-  // ============================================
-
-  // Dimensione di ogni tile in world units
   float m_tileSize = 64.0f;
-
-  // Numero massimo di tile (per allocazione navmesh)
   int m_maxTiles = 1024;
-
-  // Numero massimo di poligoni per tile
   int m_maxPolysPerTile = 4096;
-
-  // Statistiche
   int getTileCount() const { return m_tileCount; }
   int getTotalPolygons() const { return m_totalPolygons; }
-
-  // Accesso al bounding box
-  void getBounds(float* bmin, float* bmax) const;
+  void getBounds(float *bmin, float *bmax) const;
 
 private:
   rcContext *m_ctx;
   dtNavMesh *m_navMesh;
   dtNavMeshQuery *m_navQuery;
-
-  // Tile cache for dynamic obstacles
   dtTileCache *m_tileCache;
   LinearAllocator *m_talloc;
   TileCacheCompressor *m_tcomp;
   TileCacheMeshProcess *m_tmproc;
-
-  // Dati della mesh originale (per rebuild delle tile)
   std::vector<float> m_storedVerts;
   std::vector<int> m_storedTris;
   int m_storedVertCount = 0;
   int m_storedTriCount = 0;
-
-  // Bounding box totale
   float m_boundsMin[3] = {0, 0, 0};
   float m_boundsMax[3] = {0, 0, 0};
-
-  // Configurazione Recast salvata
   rcConfig m_cfg;
-
-  // Numero tile in ogni direzione
   int m_tilesX = 0;
   int m_tilesZ = 0;
-
-  // Statistiche tile
   int m_tileCount = 0;
   int m_totalPolygons = 0;
-
-  // Per debug drawing - una mesh per tile
   struct TileDebugData {
-    rcPolyMesh* polyMesh = nullptr;
+    rcPolyMesh *polyMesh = nullptr;
     Model debugModel = {0};
     bool meshBuilt = false;
   };
-
   std::unordered_map<TileCoord, TileDebugData, TileCoordHash> m_tileDebugData;
-
-  // Debug mesh globale (combinata)
   Model m_debugModel = {0};
   bool m_debugMeshBuilt = false;
-
-  // Obstacle management
   std::vector<NavMeshObstacle> m_obstacles;
   unsigned int m_nextObstacleId = 1;
-
-  // Metodi privati
   bool initNavMesh();
   bool initTileCache();
-  unsigned char* buildTileData(int tileX, int tileY, int& dataSize);
-  int rasterizeTileLayers(int tileX, int tileY, const rcConfig& cfg,
-                          struct TileCacheData* tiles, int maxTiles);
+  unsigned char *buildTileData(int tileX, int tileY, int &dataSize);
+  int rasterizeTileLayers(int tileX, int tileY, const rcConfig &cfg,
+                          struct TileCacheData *tiles, int maxTiles);
   void buildDebugMesh();
-  void buildDebugMeshFromNavMesh();  // Costruisce debug mesh da dtNavMesh
-  void buildDebugMeshForTile(int tileX, int tileY, rcPolyMesh* pmesh);
+  void buildDebugMeshFromNavMesh();
+  void buildDebugMeshForTile(int tileX, int tileY, rcPolyMesh *pmesh);
   void cleanupTileDebugData();
 };
 
-// Tile data for building cache layers
-struct TileCacheData
-{
-  unsigned char* data;
+struct TileCacheData {
+  unsigned char *data;
   int dataSize;
 };
 

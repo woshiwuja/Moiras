@@ -6,7 +6,7 @@
 
 namespace moiras {
 
-constexpr int MAX_LIGHTS = 4;
+constexpr int MAX_LIGHTS = 256;
 
 class LightManager {
 public:

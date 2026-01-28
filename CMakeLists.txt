@@ -86,6 +86,8 @@ add_executable(
     src/lights/lightmanager.cpp
     src/lights/lights.cpp
     src/lights/lights.h
+    src/audio/audiodevice.hpp
+    src/audio/audiodevice.cpp
     src/navigation/navmesh.h
     src/navigation/navmesh.cpp
     src/gui/sidebar.cpp

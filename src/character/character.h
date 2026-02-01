@@ -6,8 +6,9 @@
 #include <raylib.h>
 #include <string>
 
-#include "../gui/inventory.hpp"
 namespace moiras {
+
+class Inventory; // Forward declaration
 
 class Character : public GameObject {
 public:

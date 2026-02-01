@@ -6,6 +6,7 @@
 #include <raylib.h>
 #include <string>
 
+#include "../gui/inventory.hpp"
 namespace moiras {
 
 class Character : public GameObject {
@@ -17,6 +18,7 @@ public:
   float scale;
   ModelInstance modelInstance;
   Quaternion quat_rotation;
+  std::string model_path="../assets/ogre.glb";
 
   // Animation data
   ModelAnimation* m_animations = nullptr;

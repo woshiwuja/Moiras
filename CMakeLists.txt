@@ -98,6 +98,8 @@ add_executable(
     src/resources/model_manager.h
     src/resources/model_manager.cpp
     rlImGui/rlImGui.cpp
+    src/gui/inventory.hpp
+    src/gui/inventory.cpp
     rlImGui/rlImGui.h
 )
 
@@ -128,4 +130,5 @@ target_link_libraries(Moiras
     Detour
     DetourCrowd
     DetourTileCache
+    lua
 )

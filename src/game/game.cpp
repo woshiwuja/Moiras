@@ -116,7 +116,7 @@ namespace moiras
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
     auto player = std::make_unique<Character>();
     player->name = "Player";
-    player->loadModel(modelManager, "../assets/ogre.glb");
+    player->loadModel(modelManager, player->model_path);
     player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
     player->scale = .05f;
     registerObject(player->id, player.get());

@@ -102,7 +102,7 @@ void Inventory::renderCharacterPreview() {
 
     float dist = 3.0f;
     if (modelHeight > 0.01f) {
-        dist = (modelHeight * 1.5f) /
+        dist = (modelHeight * 0.9f) /
                tanf(m_previewCamera.fovy * DEG2RAD * 0.5f);
         dist = std::clamp(dist, 0.5f, 100.0f);
     }
@@ -296,24 +296,29 @@ void Inventory::gui() {
     // the actual ImGui draw happens later in rlImGuiEnd().
     renderCharacterPreview();
 
-    ImGui::SetNextWindowSize(ImVec2(600, 720), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Inventory", &isOpen, ImGuiWindowFlags_NoScrollbar);
+    // Compute window size from grid + right panel
+    float gridW = m_gridCols * m_slotSize + 24.0f; // grid + child padding
+    float rightW = static_cast<float>(PREVIEW_W) + 24.0f;
+    float winW = gridW + rightW + 16.0f;
+    float winH = static_cast<float>(PREVIEW_H) + 400.0f;
 
-    // ---- Top section: preview + equipment side by side ----
-    float topHeight = static_cast<float>(PREVIEW_H) + 20.0f;
-    ImGui::BeginChild("TopSection", ImVec2(0, topHeight),
-                      ImGuiChildFlags_None);
+    ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
+    ImGui::Begin("Inventory", &isOpen,
+                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoResize);
 
-    drawPreviewZone();
-    ImGui::SameLine();
-    drawEquipmentZone();
-
+    // ---- Left: grid inventory ----
+    ImGui::BeginChild("LeftPanel", ImVec2(gridW, 0), ImGuiChildFlags_None);
+    drawGridZone();
     ImGui::EndChild();
 
-    ImGui::Separator();
+    ImGui::SameLine();
 
-    // ---- Bottom section: grid inventory ----
-    drawGridZone();
+    // ---- Right: preview on top, equipment below ----
+    ImGui::BeginChild("RightPanel", ImVec2(0, 0), ImGuiChildFlags_None);
+    drawPreviewZone();
+    ImGui::Spacing();
+    drawEquipmentZone();
+    ImGui::EndChild();
 
     ImGui::End();
 }
@@ -325,8 +330,7 @@ void Inventory::gui() {
 void Inventory::drawPreviewZone() {
     ImGui::BeginChild(
         "PreviewZone",
-        ImVec2(static_cast<float>(PREVIEW_W) + 16.0f,
-               static_cast<float>(PREVIEW_H) + 16.0f),
+        ImVec2(0, static_cast<float>(PREVIEW_H) + 16.0f),
         ImGuiChildFlags_Borders);
 
     if (m_previewInitialized && m_previewRT.texture.id > 0) {
@@ -351,7 +355,7 @@ void Inventory::drawPreviewZone() {
 void Inventory::drawEquipmentZone() {
     ImGui::BeginChild(
         "EquipmentZone",
-        ImVec2(0, static_cast<float>(PREVIEW_H) + 16.0f),
+        ImVec2(0, 0),
         ImGuiChildFlags_Borders);
 
     ImGui::TextUnformatted("Equipment");

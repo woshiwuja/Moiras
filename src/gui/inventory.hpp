@@ -71,8 +71,8 @@ class Inventory : public GameObject {
     bool m_previewInitialized = false;
     float m_previewYaw = 0.0f;
 
-    static constexpr int PREVIEW_W = 280;
-    static constexpr int PREVIEW_H = 360;
+    static constexpr int PREVIEW_W = 300;
+    static constexpr int PREVIEW_H = 400;
 
     // Internal drawing helpers
     void initPreview();

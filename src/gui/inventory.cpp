@@ -122,7 +122,8 @@ void Inventory::renderCharacterPreview() {
         mi.bindAnimationData();
     }
 
-    Matrix transform = MatrixScale(parent->scale, parent->scale, parent->scale);
+    Matrix transform =
+        MatrixScale(parent->scale, parent->scale, parent->scale);
 
     for (int i = 0; i < mi.meshCount(); i++) {
         int matIdx = mi.meshMaterial()[i];
@@ -237,7 +238,6 @@ bool Inventory::equipItem(int itemIdx) {
 
     int slotIdx = static_cast<int>(item.compatibleSlot);
 
-    // Unequip existing item in that slot first
     if (m_equipped[slotIdx] != -1) {
         unequipItem(item.compatibleSlot);
     }
@@ -258,7 +258,7 @@ bool Inventory::unequipItem(EquipmentSlot slot) {
 
     int pos = findFirstFreePosition(item.width, item.height);
     if (pos < 0)
-        return false; // No grid space
+        return false;
 
     item.gridX = pos % m_gridCols;
     item.gridY = pos / m_gridCols;
@@ -280,9 +280,8 @@ const InventoryItem *Inventory::getItem(int idx) const {
 // ---------------------------------------------------------------------------
 
 void Inventory::update() {
-    if (!isOpen)
-        return;
-    renderCharacterPreview();
+    // Note: Character::update() doesn't propagate to children, so the
+    // preview rendering is done inside gui() instead.
     GameObject::update();
 }
 
@@ -292,12 +291,18 @@ void Inventory::gui() {
     if (!isOpen)
         return;
 
+    // Render the 3D preview to texture BEFORE the ImGui window.
+    // This is safe: ImGui is only building command lists at this point,
+    // the actual ImGui draw happens later in rlImGuiEnd().
+    renderCharacterPreview();
+
     ImGui::SetNextWindowSize(ImVec2(600, 720), ImGuiCond_FirstUseEver);
     ImGui::Begin("Inventory", &isOpen, ImGuiWindowFlags_NoScrollbar);
 
     // ---- Top section: preview + equipment side by side ----
     float topHeight = static_cast<float>(PREVIEW_H) + 20.0f;
-    ImGui::BeginChild("TopSection", ImVec2(0, topHeight), ImGuiChildFlags_None);
+    ImGui::BeginChild("TopSection", ImVec2(0, topHeight),
+                      ImGuiChildFlags_None);
 
     drawPreviewZone();
     ImGui::SameLine();
@@ -318,10 +323,11 @@ void Inventory::gui() {
 // ---------------------------------------------------------------------------
 
 void Inventory::drawPreviewZone() {
-    ImGui::BeginChild("PreviewZone",
-                      ImVec2(static_cast<float>(PREVIEW_W) + 16.0f,
-                             static_cast<float>(PREVIEW_H) + 16.0f),
-                      ImGuiChildFlags_Borders);
+    ImGui::BeginChild(
+        "PreviewZone",
+        ImVec2(static_cast<float>(PREVIEW_W) + 16.0f,
+               static_cast<float>(PREVIEW_H) + 16.0f),
+        ImGuiChildFlags_Borders);
 
     if (m_previewInitialized && m_previewRT.texture.id > 0) {
         rlImGuiImageRenderTextureFit(&m_previewRT, true);
@@ -339,72 +345,121 @@ void Inventory::drawPreviewZone() {
 }
 
 // ---------------------------------------------------------------------------
-// Equipment zone
+// Equipment zone  (grid-based paper-doll layout)
 // ---------------------------------------------------------------------------
 
 void Inventory::drawEquipmentZone() {
-    ImGui::BeginChild("EquipmentZone", ImVec2(0, static_cast<float>(PREVIEW_H) + 16.0f),
-                      ImGuiChildFlags_Borders);
+    ImGui::BeginChild(
+        "EquipmentZone",
+        ImVec2(0, static_cast<float>(PREVIEW_H) + 16.0f),
+        ImGuiChildFlags_Borders);
 
     ImGui::TextUnformatted("Equipment");
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImVec2 slotSize(60, 60);
+    float es = m_equipSlotSize;
+    float gap = 4.0f;
+    ImVec2 origin = ImGui::GetCursorScreenPos();
 
-    // Vertical slots
-    drawEquipSlotButton("Head", EquipmentSlot::Head, slotSize);
-    drawEquipSlotButton("Chest", EquipmentSlot::Chest, slotSize);
-    drawEquipSlotButton("Legs", EquipmentSlot::Legs, slotSize);
-    drawEquipSlotButton("Feet", EquipmentSlot::Feet, slotSize);
+    // Horizontal layout: [L.Hand 1x3] [gap] [Body 2xN] [gap] [R.Hand 1x3]
+    float handW = 1.0f * es;
+    float bodyW = 2.0f * es;
+    float bodyX = handW + gap;
+    float rHandX = bodyX + bodyW + gap;
 
-    ImGui::Spacing();
-    ImGui::TextUnformatted("Hands");
-    drawEquipSlotButton("L.Hand", EquipmentSlot::LeftHand, slotSize);
-    ImGui::SameLine();
-    drawEquipSlotButton("R.Hand", EquipmentSlot::RightHand, slotSize);
+    // Vertical layout with gaps between each piece
+    float headY = 0.0f;
+    float chestY = 2.0f * es + gap;
+    float legsY = chestY + 3.0f * es + gap;
+    float feetY = legsY + 2.0f * es + gap;
+
+    // Draw all equipment slots as mini-grids
+    drawEquipSlotGrid("Head", EquipmentSlot::Head, 2, 2,
+                      ImVec2(origin.x + bodyX, origin.y + headY));
+    drawEquipSlotGrid("Chest", EquipmentSlot::Chest, 2, 3,
+                      ImVec2(origin.x + bodyX, origin.y + chestY));
+    drawEquipSlotGrid("L.Hand", EquipmentSlot::LeftHand, 1, 3,
+                      ImVec2(origin.x, origin.y + chestY));
+    drawEquipSlotGrid("R.Hand", EquipmentSlot::RightHand, 1, 3,
+                      ImVec2(origin.x + rHandX, origin.y + chestY));
+    drawEquipSlotGrid("Legs", EquipmentSlot::Legs, 2, 2,
+                      ImVec2(origin.x + bodyX, origin.y + legsY));
+    drawEquipSlotGrid("Feet", EquipmentSlot::Feet, 2, 2,
+                      ImVec2(origin.x + bodyX, origin.y + feetY));
+
+    // Reserve space so ImGui scrolling / layout knows the content size
+    float totalW = rHandX + handW;
+    float totalH = feetY + 2.0f * es;
+    ImGui::Dummy(ImVec2(totalW, totalH));
 
     ImGui::EndChild();
 }
 
-void Inventory::drawEquipSlotButton(const char *label, EquipmentSlot slot,
-                                    ImVec2 size) {
+void Inventory::drawEquipSlotGrid(const char *label, EquipmentSlot slot,
+                                  int slotW, int slotH, ImVec2 pos) {
     int slotIdx = static_cast<int>(slot);
     int itemIdx = m_equipped[slotIdx];
+    float es = m_equipSlotSize;
+    float totalW = slotW * es;
+    float totalH = slotH * es;
 
-    ImGui::PushID(static_cast<int>(slot));
-
-    ImVec2 cursor = ImGui::GetCursorScreenPos();
     ImDrawList *dl = ImGui::GetWindowDrawList();
+    ImGui::PushID(slotIdx + 100);
 
-    ImU32 bgColor = IM_COL32(40, 40, 50, 255);
-    ImU32 borderColor = IM_COL32(100, 100, 120, 255);
+    // --- Background ---
+    dl->AddRectFilled(pos, ImVec2(pos.x + totalW, pos.y + totalH),
+                      IM_COL32(30, 30, 35, 255), 3.0f);
 
+    // --- Grid lines ---
+    for (int x = 0; x <= slotW; x++) {
+        float px = pos.x + x * es;
+        dl->AddLine(ImVec2(px, pos.y), ImVec2(px, pos.y + totalH),
+                    IM_COL32(60, 60, 70, 255));
+    }
+    for (int y = 0; y <= slotH; y++) {
+        float py = pos.y + y * es;
+        dl->AddLine(ImVec2(pos.x, py), ImVec2(pos.x + totalW, py),
+                    IM_COL32(60, 60, 70, 255));
+    }
+
+    // --- Item fill or label ---
     if (itemIdx != -1) {
-        bgColor = m_items[itemIdx].color;
-        borderColor = IM_COL32(220, 200, 100, 255);
-    }
-
-    dl->AddRectFilled(cursor, ImVec2(cursor.x + size.x, cursor.y + size.y),
-                      bgColor, 4.0f);
-    dl->AddRect(cursor, ImVec2(cursor.x + size.x, cursor.y + size.y),
-                borderColor, 4.0f, 0, 1.5f);
-
-    // Draw text
-    if (itemIdx == -1) {
-        ImVec2 textSize = ImGui::CalcTextSize(label);
-        dl->AddText(ImVec2(cursor.x + (size.x - textSize.x) * 0.5f,
-                           cursor.y + (size.y - textSize.y) * 0.5f),
-                    IM_COL32(120, 120, 140, 255), label);
+        auto &item = m_items[itemIdx];
+        dl->AddRectFilled(ImVec2(pos.x + 2, pos.y + 2),
+                          ImVec2(pos.x + totalW - 2, pos.y + totalH - 2),
+                          item.color, 3.0f);
+        dl->AddRect(ImVec2(pos.x + 2, pos.y + 2),
+                    ImVec2(pos.x + totalW - 2, pos.y + totalH - 2),
+                    IM_COL32(220, 200, 100, 200), 3.0f, 0, 1.5f);
+        dl->AddText(ImVec2(pos.x + 4, pos.y + 3),
+                    IM_COL32(255, 255, 255, 255), item.name.c_str());
     } else {
-        const char *itemName = m_items[itemIdx].name.c_str();
-        dl->AddText(ImVec2(cursor.x + 3, cursor.y + 3),
-                    IM_COL32(255, 255, 255, 255), itemName);
+        ImVec2 textSize = ImGui::CalcTextSize(label);
+        dl->AddText(ImVec2(pos.x + (totalW - textSize.x) * 0.5f,
+                           pos.y + (totalH - textSize.y) * 0.5f),
+                    IM_COL32(80, 80, 100, 255), label);
     }
 
-    ImGui::InvisibleButton("##equipslot", size);
+    // --- Invisible button for interaction ---
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::InvisibleButton("##eslot", ImVec2(totalW, totalH));
 
-    // Drag source
+    // --- Drag highlight when hovering with a compatible item ---
+    const ImGuiPayload *dragPayload = ImGui::GetDragDropPayload();
+    if (dragPayload && dragPayload->IsDataType("INV_ITEM") &&
+        dragPayload->Data && ImGui::IsItemHovered()) {
+        int dIdx = *(const int *)dragPayload->Data;
+        if (dIdx >= 0 && dIdx < static_cast<int>(m_items.size())) {
+            bool compat = (m_items[dIdx].compatibleSlot == slot);
+            ImU32 hlColor =
+                compat ? IM_COL32(0, 200, 0, 50) : IM_COL32(200, 0, 0, 50);
+            dl->AddRectFilled(pos, ImVec2(pos.x + totalW, pos.y + totalH),
+                              hlColor);
+        }
+    }
+
+    // --- Drag source ---
     if (itemIdx != -1 &&
         ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
         ImGui::SetDragDropPayload("INV_ITEM", &itemIdx, sizeof(int));
@@ -412,7 +467,7 @@ void Inventory::drawEquipSlotButton(const char *label, EquipmentSlot slot,
         ImGui::EndDragDropSource();
     }
 
-    // Drop target
+    // --- Drop target ---
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload *payload =
                 ImGui::AcceptDragDropPayload("INV_ITEM")) {
@@ -426,8 +481,8 @@ void Inventory::drawEquipSlotButton(const char *label, EquipmentSlot slot,
                 }
                 // Remove dropped item from previous location
                 if (droppedItem.equipped) {
-                    for (int i = 0; i < static_cast<int>(EquipmentSlot::COUNT);
-                         i++) {
+                    for (int i = 0;
+                         i < static_cast<int>(EquipmentSlot::COUNT); i++) {
                         if (m_equipped[i] == droppedIdx) {
                             m_equipped[i] = -1;
                             break;
@@ -445,16 +500,21 @@ void Inventory::drawEquipSlotButton(const char *label, EquipmentSlot slot,
         ImGui::EndDragDropTarget();
     }
 
-    // Right-click to unequip
+    // --- Right-click to unequip ---
     if (itemIdx != -1 && ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
         unequipItem(slot);
     }
 
-    // Tooltip
+    // --- Tooltip ---
     if (itemIdx != -1 && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
         ImGui::BeginTooltip();
         ImGui::Text("%s", m_items[itemIdx].name.c_str());
         ImGui::TextDisabled("Right-click to unequip");
+        ImGui::EndTooltip();
+    } else if (itemIdx == -1 &&
+               ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        ImGui::BeginTooltip();
+        ImGui::Text("%s slot", label);
         ImGui::EndTooltip();
     }
 
@@ -462,7 +522,7 @@ void Inventory::drawEquipSlotButton(const char *label, EquipmentSlot slot,
 }
 
 // ---------------------------------------------------------------------------
-// Grid zone
+// Grid zone (backpack)
 // ---------------------------------------------------------------------------
 
 void Inventory::drawGridZone() {
@@ -486,19 +546,21 @@ void Inventory::drawGridZone() {
     // Grid lines
     for (int x = 0; x <= m_gridCols; x++) {
         float px = gridOrigin.x + x * m_slotSize;
-        dl->AddLine(ImVec2(px, gridOrigin.y), ImVec2(px, gridOrigin.y + gridH),
+        dl->AddLine(ImVec2(px, gridOrigin.y),
+                    ImVec2(px, gridOrigin.y + gridH),
                     IM_COL32(60, 60, 70, 255));
     }
     for (int y = 0; y <= m_gridRows; y++) {
         float py = gridOrigin.y + y * m_slotSize;
-        dl->AddLine(ImVec2(gridOrigin.x, py), ImVec2(gridOrigin.x + gridW, py),
+        dl->AddLine(ImVec2(gridOrigin.x, py),
+                    ImVec2(gridOrigin.x + gridW, py),
                     IM_COL32(60, 60, 70, 255));
     }
 
-    // Drag highlight: show green/red overlay where the dragged item would land
+    // Drag highlight
     const ImGuiPayload *dragPayload = ImGui::GetDragDropPayload();
-    bool isDragging =
-        dragPayload && dragPayload->IsDataType("INV_ITEM") && dragPayload->Data;
+    bool isDragging = dragPayload && dragPayload->IsDataType("INV_ITEM") &&
+                      dragPayload->Data;
     int dragIdx = -1;
     if (isDragging) {
         dragIdx = *(const int *)dragPayload->Data;
@@ -515,9 +577,8 @@ void Inventory::drawGridZone() {
         if (hoverX >= 0 && hoverX < m_gridCols && hoverY >= 0 &&
             hoverY < m_gridRows) {
             auto &dragItem = m_items[dragIdx];
-            bool valid =
-                canPlace(hoverX, hoverY, dragItem.width, dragItem.height,
-                         dragIdx);
+            bool valid = canPlace(hoverX, hoverY, dragItem.width,
+                                  dragItem.height, dragIdx);
             ImU32 hlColor =
                 valid ? IM_COL32(0, 200, 0, 50) : IM_COL32(200, 0, 0, 50);
 
@@ -563,9 +624,9 @@ void Inventory::drawGridZone() {
             char stackText[16];
             snprintf(stackText, sizeof(stackText), "x%d", item.stackCount);
             ImVec2 stackSize = ImGui::CalcTextSize(stackText);
-            dl->AddText(
-                ImVec2(itemMax.x - stackSize.x - 3, itemMax.y - stackSize.y - 2),
-                IM_COL32(255, 255, 200, 255), stackText);
+            dl->AddText(ImVec2(itemMax.x - stackSize.x - 3,
+                               itemMax.y - stackSize.y - 2),
+                        IM_COL32(255, 255, 200, 255), stackText);
         }
 
         // Equippable indicator
@@ -590,7 +651,7 @@ void Inventory::drawGridZone() {
 
             int cellVal = m_grid[cy * m_gridCols + cx];
 
-            // Drag source: any cell belonging to an item
+            // Drag source
             if (cellVal != -1) {
                 if (ImGui::BeginDragDropSource(
                         ImGuiDragDropFlags_SourceAllowNullID)) {

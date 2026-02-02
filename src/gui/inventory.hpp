@@ -56,6 +56,7 @@ class Inventory : public GameObject {
     int m_gridCols;
     int m_gridRows;
     float m_slotSize = 48.0f;
+    float m_equipSlotSize = 36.0f;
 
     // Grid occupancy: -1 = empty, otherwise index into m_items
     std::vector<int> m_grid;
@@ -79,7 +80,8 @@ class Inventory : public GameObject {
     void drawPreviewZone();
     void drawEquipmentZone();
     void drawGridZone();
-    void drawEquipSlotButton(const char *label, EquipmentSlot slot, ImVec2 size);
+    void drawEquipSlotGrid(const char *label, EquipmentSlot slot, int slotW,
+                           int slotH, ImVec2 pos);
 
     // Grid helpers
     void markGrid(int gx, int gy, int w, int h, int value);

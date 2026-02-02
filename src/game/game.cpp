@@ -5,6 +5,8 @@
 #include "../gui/gui.h"
 #include "../gui/sidebar.h"
 #include "../src/audio/audiodevice.hpp"
+#include "../scripting/ScriptEngine.hpp"
+#include "../scripting/ScriptComponent.hpp"
 #include "imgui.h"
 #include <memory>
 #include <raylib.h>
@@ -16,6 +18,12 @@ namespace moiras
 
   void Game::setup()
   {
+    // Initialize the Lua scripting engine
+    ScriptEngine::instance().initialize();
+    ScriptEngine::instance().setGameRoot(&root);
+    ScriptEngine::instance().setGame(this);
+    ScriptEngine::instance().setScriptsDirectory("../assets/scripts");
+
     // Create main camera
     auto mainCamera = std::make_unique<GameCamera>("MainCamera");
 
@@ -116,6 +124,7 @@ namespace moiras
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
     auto player = std::make_unique<Character>();
     player->name = "Player";
+    player->tag = "player";
     player->loadModel(modelManager, player->model_path);
     player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
     player->scale = .05f;
@@ -146,6 +155,28 @@ namespace moiras
 
     // Imposta lo shader condiviso per le strutture
     Structure::setSharedShader(celShader);
+
+    TraceLog(LOG_INFO, "SCRIPTING: Lua scripting system ready");
+  }
+
+  void Game::updateScriptsRecursive(GameObject *obj, float dt)
+  {
+    if (!obj)
+      return;
+    if (auto *script = obj->getScriptComponent())
+    {
+      if (script->isLoaded() && !script->hasError())
+      {
+        script->onUpdate(dt);
+      }
+    }
+    for (auto &child : obj->children)
+    {
+      if (child)
+      {
+        updateScriptsRecursive(child.get(), dt);
+      }
+    }
   }
 
   void Game::loop(Window window)
@@ -153,6 +184,17 @@ namespace moiras
     while (!window.shouldClose())
     {
       root.update();
+
+      // Hot-reload check every 60 frames (~1 second at 60fps)
+      m_frameCount++;
+      if (m_frameCount % 60 == 0)
+      {
+        ScriptEngine::instance().hotReload();
+      }
+
+      // Update all Lua scripts
+      float dt = GetFrameTime();
+      updateScriptsRecursive(&root, dt);
 
       auto camera = root.getChildOfType<GameCamera>();
       auto map = root.getChildOfType<Map>();
@@ -249,6 +291,7 @@ namespace moiras
 
   Game::~Game()
   {
+    ScriptEngine::instance().shutdown();
     UnloadShader(outlineShader);
     UnloadRenderTexture(renderTarget);
     rlImGuiShutdown();

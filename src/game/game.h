@@ -21,6 +21,9 @@ namespace moiras
     float farPlane;
     int depthTextureLoc;
     std::unordered_map<unsigned int, GameObject *> registry;
+    int m_frameCount = 0;
+
+    void updateScriptsRecursive(GameObject *obj, float dt);
 
   public:
     GameObject root;

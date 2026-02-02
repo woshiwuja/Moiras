@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 4.1)
+cmake_minimum_required(VERSION 3.22)
 project(Moiras)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(FetchContent)
@@ -53,6 +53,36 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(RecastNavigation)
 
+# Fetch Lua 5.4
+FetchContent_Declare(
+    lua
+    URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
+    URL_HASH SHA256=9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30
+)
+FetchContent_Populate(lua)
+
+# Build Lua as a static library from source
+file(GLOB LUA_CORE_SOURCES ${lua_SOURCE_DIR}/src/*.c)
+# Remove standalone interpreter and compiler executables
+list(FILTER LUA_CORE_SOURCES EXCLUDE REGEX ".*/lua\\.c$")
+list(FILTER LUA_CORE_SOURCES EXCLUDE REGEX ".*/luac\\.c$")
+add_library(lua_static STATIC ${LUA_CORE_SOURCES})
+target_include_directories(lua_static PUBLIC ${lua_SOURCE_DIR}/src)
+if(UNIX)
+    target_compile_definitions(lua_static PRIVATE LUA_USE_POSIX)
+    target_link_libraries(lua_static PRIVATE m)
+endif()
+# Suppress warnings in Lua C code
+target_compile_options(lua_static PRIVATE -w)
+
+# Fetch Sol2 (header-only C++/Lua binding)
+FetchContent_Declare(
+    sol2
+    GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+    GIT_TAG v3.3.0
+)
+FetchContent_Populate(sol2)
+
 # Crea libreria ImGui PRIMA dell'eseguibile
 add_subdirectory(imgui)
 
@@ -101,6 +131,23 @@ add_executable(
     src/gui/inventory.hpp
     src/gui/inventory.cpp
     rlImGui/rlImGui.h
+    # Lua scripting system
+    src/scripting/ScriptEngine.hpp
+    src/scripting/ScriptEngine.cpp
+    src/scripting/ScriptComponent.hpp
+    src/scripting/ScriptComponent.cpp
+    src/scripting/LuaBindings.hpp
+    src/scripting/LuaBindings.cpp
+    src/scripting/bindings/MathBindings.hpp
+    src/scripting/bindings/MathBindings.cpp
+    src/scripting/bindings/InputBindings.hpp
+    src/scripting/bindings/InputBindings.cpp
+    src/scripting/bindings/WorldBindings.hpp
+    src/scripting/bindings/WorldBindings.cpp
+    src/scripting/bindings/GameObjectBindings.hpp
+    src/scripting/bindings/GameObjectBindings.cpp
+    src/scripting/bindings/CharacterBindings.hpp
+    src/scripting/bindings/CharacterBindings.cpp
 )
 
 target_include_directories(Moiras PUBLIC
@@ -116,6 +163,7 @@ target_include_directories(Moiras PUBLIC
 target_include_directories(Moiras PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui
     ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui
+    ${sol2_SOURCE_DIR}/include
 )
 
 # Disable Font Awesome in rlImGui (optional font icons)
@@ -130,5 +178,12 @@ target_link_libraries(Moiras
     Detour
     DetourCrowd
     DetourTileCache
-    lua5.4
+    lua_static
+)
+
+# Copy scripts to build directory
+add_custom_command(TARGET Moiras POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/assets/scripts
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/../assets/scripts
 )

@@ -8,16 +8,19 @@ using namespace std;
 
 namespace moiras
 {
+  class ScriptComponent;
+
   class GameObject
   {
   private:
     static unsigned int nextId;
-
+    std::unique_ptr<ScriptComponent> m_scriptComponent;
 
   public:
       vector<unique_ptr<GameObject>> children;
     unsigned int id;
     string name;
+    string tag;
     bool isVisible;
     Vector3 position;
     GameObject *parent; // CAMBIATO: raw pointer invece di unique_ptr
@@ -26,7 +29,7 @@ namespace moiras
     GameObject(GameObject &&other) noexcept;
     GameObject &operator=(GameObject &&other) noexcept;
     GameObject &operator=(const GameObject &) = delete;
-    virtual ~GameObject() = default;
+    virtual ~GameObject();
 
     virtual void update();
     virtual void draw();
@@ -89,6 +92,8 @@ namespace moiras
       return name.c_str();
     } // CORRETTO: ritorna const char*
     void setName(const string &n) { name = n; }
+    string getTag() const { return tag; }
+    void setTag(const string &t) { tag = t; }
     unsigned int getId() const { return id; }
     GameObject *getRoot()
     {
@@ -99,6 +104,11 @@ namespace moiras
       }
       return current;
     }
+
+    // Scripting
+    void attachScript(const std::string &scriptPath);
+    ScriptComponent *getScriptComponent() { return m_scriptComponent.get(); }
+    const ScriptComponent *getScriptComponent() const { return m_scriptComponent.get(); }
   };
   // Const version if needed
 } // namespace moiras

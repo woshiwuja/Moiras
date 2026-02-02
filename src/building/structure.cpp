@@ -7,8 +7,9 @@ namespace moiras {
 Shader Structure::sharedShader = {0};
 
 Structure::Structure()
-    : GameObject("Structure"), eulerRot({0.0f, 0.0f, 0.0f}), scale(1.0f),
-      isPlaced(false), bounds({0}) {}
+    : GameObject("Structure"), eulerRot({0.0f, 0.0f, 0.0f}),
+      rotation(QuaternionIdentity()), scale(1.0f), isPlaced(false),
+      bounds({0}) {}
 
 Structure::~Structure() {
   // ModelInstance destructor handles cleanup automatically
@@ -17,7 +18,7 @@ Structure::~Structure() {
 Structure::Structure(Structure &&other) noexcept
     : GameObject(std::move(other)),
       modelInstance(std::move(other.modelInstance)), eulerRot(other.eulerRot),
-      scale(other.scale), isPlaced(other.isPlaced),
+      rotation(other.rotation), scale(other.scale), isPlaced(other.isPlaced),
       modelPath(std::move(other.modelPath)), bounds(other.bounds) {}
 
 Structure &Structure::operator=(Structure &&other) noexcept {
@@ -25,6 +26,7 @@ Structure &Structure::operator=(Structure &&other) noexcept {
     GameObject::operator=(std::move(other));
     modelInstance = std::move(other.modelInstance);
     eulerRot = other.eulerRot;
+    rotation = other.rotation;
     scale = other.scale;
     isPlaced = other.isPlaced;
     modelPath = std::move(other.modelPath);
@@ -39,9 +41,9 @@ void Structure::draw() {
   if (!isVisible || !modelInstance.isValid())
     return;
 
-  // Calcola la matrice di trasformazione
+  // Calcola la matrice di trasformazione usando il quaternione (include la normale del terreno)
   Matrix matScale = MatrixScale(scale, scale, scale);
-  Matrix matRotation = MatrixRotateXYZ(eulerRot);
+  Matrix matRotation = QuaternionToMatrix(rotation);
   Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
 
   Matrix transform =

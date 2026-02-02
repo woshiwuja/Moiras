@@ -178,7 +178,7 @@ void ModelInstance::prepareForAnimation() {
     }
 
     // Clone mesh structures (not the vertex data, just the Mesh structs)
-    // This allows each instance to have its own animation buffer pointers
+    // This allows each instance to have its own bone matrix buffers
     m_localMeshes = static_cast<Mesh*>(RL_MALLOC(m_meshCount * sizeof(Mesh)));
     m_animData.resize(m_meshCount);
 
@@ -192,25 +192,13 @@ void ModelInstance::prepareForAnimation() {
         data.vertexCount = localMesh.vertexCount;
         data.boneCount = localMesh.boneCount;
 
-        // Clone animVertices for per-instance animation
-        if (m_sharedMeshes[i].animVertices != nullptr) {
-            size_t size = localMesh.vertexCount * 3 * sizeof(float);
-            data.animVertices = static_cast<float*>(RL_MALLOC(size));
-            memcpy(data.animVertices, m_sharedMeshes[i].animVertices, size);
-            // Point local mesh to our per-instance buffer
-            localMesh.animVertices = data.animVertices;
-        }
+        // Null out CPU skinning buffers — GPU skinning via bone matrices is used
+        // instead. This prevents UpdateModelAnimation from doing expensive
+        // per-vertex CPU transforms and large buffer uploads every frame.
+        localMesh.animVertices = nullptr;
+        localMesh.animNormals = nullptr;
 
-        // Clone animNormals for per-instance animation
-        if (m_sharedMeshes[i].animNormals != nullptr) {
-            size_t size = localMesh.vertexCount * 3 * sizeof(float);
-            data.animNormals = static_cast<float*>(RL_MALLOC(size));
-            memcpy(data.animNormals, m_sharedMeshes[i].animNormals, size);
-            // Point local mesh to our per-instance buffer
-            localMesh.animNormals = data.animNormals;
-        }
-
-        // Clone boneMatrices for per-instance animation
+        // Clone boneMatrices for per-instance animation (GPU skinning path)
         if (m_sharedMeshes[i].boneMatrices != nullptr && localMesh.boneCount > 0) {
             size_t size = localMesh.boneCount * sizeof(Matrix);
             data.boneMatrices = static_cast<Matrix*>(RL_MALLOC(size));
@@ -220,7 +208,7 @@ void ModelInstance::prepareForAnimation() {
         }
     }
 
-    TraceLog(LOG_INFO, "ModelInstance: Prepared per-instance animation data for %d meshes", m_meshCount);
+    TraceLog(LOG_INFO, "ModelInstance: Prepared per-instance animation data (GPU skinning) for %d meshes", m_meshCount);
 }
 
 void ModelInstance::bindAnimationData() {

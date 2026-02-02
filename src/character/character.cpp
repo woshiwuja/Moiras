@@ -53,6 +53,7 @@ namespace moiras
           m_animationCount(other.m_animationCount),
           m_currentAnimIndex(other.m_currentAnimIndex),
           m_currentFrame(other.m_currentFrame),
+          m_lastUpdatedFrame(other.m_lastUpdatedFrame),
           m_animationTimer(other.m_animationTimer),
           m_isAnimating(other.m_isAnimating)
     {
@@ -84,6 +85,7 @@ namespace moiras
             m_animationCount = other.m_animationCount;
             m_currentAnimIndex = other.m_currentAnimIndex;
             m_currentFrame = other.m_currentFrame;
+            m_lastUpdatedFrame = other.m_lastUpdatedFrame;
             m_animationTimer = other.m_animationTimer;
             m_isAnimating = other.m_isAnimating;
 
@@ -322,6 +324,7 @@ namespace moiras
             {
                 m_currentAnimIndex = index;
                 m_currentFrame = 0;
+                m_lastUpdatedFrame = -1;
                 m_animationTimer = 0.0f;
                 TraceLog(LOG_INFO, "Character '%s': Set animation to '%s' (index %d)",
                          name.c_str(), animName.c_str(), index);
@@ -344,6 +347,7 @@ namespace moiras
     {
         m_isAnimating = false;
         m_currentFrame = 0;
+        m_lastUpdatedFrame = -1;
         m_animationTimer = 0.0f;
     }
 
@@ -381,11 +385,17 @@ namespace moiras
             }
         }
 
-        // Bind per-instance animation data so updates go to our instance, not shared data
-        modelInstance.bindAnimationData();
+        // Only update bone matrices when the animation frame actually changes.
+        // We use UpdateModelAnimationBones (not UpdateModelAnimation) because our
+        // local meshes have animVertices/animNormals set to null for GPU skinning.
+        // UpdateModelAnimation writes directly to animVertices without a null check,
+        // which would segfault. UpdateModelAnimationBones only computes bone matrices.
+        if (m_currentFrame == m_lastUpdatedFrame)
+        {
+            return;
+        }
+        m_lastUpdatedFrame = m_currentFrame;
 
-        // Build a temporary Model structure for UpdateModelAnimation
-        // This is needed because the ModelInstance doesn't provide a full Model
         Model tempModel = {0};
         tempModel.meshCount = modelInstance.meshCount();
         tempModel.meshes = modelInstance.meshes();
@@ -396,10 +406,8 @@ namespace moiras
         tempModel.bones = modelInstance.bones();
         tempModel.bindPose = modelInstance.bindPose();
 
-        // Update model animation (writes to our per-instance buffers since we bound them)
-        UpdateModelAnimation(tempModel, anim, m_currentFrame);
-
-        // Note: We leave the data bound - it will be used by draw() and unbound after
+        // Only update bone matrices — GPU shader handles vertex transformation
+        UpdateModelAnimationBones(tempModel, anim, m_currentFrame);
     }
 
 } // namespace moiras

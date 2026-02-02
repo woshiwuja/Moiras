@@ -130,5 +130,5 @@ target_link_libraries(Moiras
     Detour
     DetourCrowd
     DetourTileCache
-    lua
+    lua5.4
 )

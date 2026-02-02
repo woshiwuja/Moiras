@@ -1,125 +1,110 @@
 #pragma once
-#include "gui.h"
-#include "../../rlImGui/rlImGui.h"
-#include <vector>
+
 #include "../game/game_object.h"
-#include "../camera/camera.h"
-#include "../character/character.h"
-namespace moiras
-{
+#include "imgui.h"
+#include <array>
+#include <string>
+#include <vector>
 
-    struct InventoryItem
-    {
-        std::string name;
-        int x, y;          // Posizione in alto a sinistra nella griglia
-        int width, height; // Dimensioni (es. una spada è 1x3)
-        ImColor color;     // Per debug o estetica
-    };
-    class Inventory : public GameObject
-    {
-        public:
-    Texture2D previewTexture = {0};
-    RenderTexture2D previewRenderTarget = {0};
-    Camera3D previewCamera = {0};
-    ModelManager* m_modelManager = nullptr;
-    private:
-        int size_x, size_y;
-        float slotSize = 15.0f;
-        std::vector<char> grid; // Usiamo char per avere riferimenti validi
-        std::vector<InventoryItem> items;
+namespace moiras {
 
+class Character; // Forward declaration
 
-    void setupPreviewCamera() {
-        previewCamera.position = {3.0f, 3.0f, 3.0f};
-        previewCamera.target = {0.0f, 0.5f, 0.0f};
-        previewCamera.up = {0.0f, 1.0f, 0.0f};
-        previewCamera.fovy = 45.0f;
-        previewCamera.projection = CAMERA_PERSPECTIVE;
+enum class EquipmentSlot : int {
+    Head = 0,
+    Chest,
+    Legs,
+    Feet,
+    LeftHand,
+    RightHand,
+    COUNT
+};
+
+inline const char *getEquipmentSlotName(EquipmentSlot slot) {
+    switch (slot) {
+    case EquipmentSlot::Head:
+        return "Head";
+    case EquipmentSlot::Chest:
+        return "Chest";
+    case EquipmentSlot::Legs:
+        return "Legs";
+    case EquipmentSlot::Feet:
+        return "Feet";
+    case EquipmentSlot::LeftHand:
+        return "L.Hand";
+    case EquipmentSlot::RightHand:
+        return "R.Hand";
+    default:
+        return "None";
     }
-    public:
-        bool isOpen = false;
-        Inventory(int w, int h) : size_x(w), size_y(h)
-        {
-            grid.resize(size_x * size_y, 0);
-            setupPreviewCamera();
-        }
-
-        // Controlla se un rettangolo di slot è libero
-        bool canPlaceItem(int startX, int startY, int w, int h)
-        {
-            if (startX < 0 || startY < 0 || startX + w > size_x || startY + h > size_y)
-                return false;
-
-            for (int yy = startY; yy < startY + h; yy++)
-            {
-                for (int xx = startX; xx < startX + w; xx++)
-                {
-                    if (grid[yy * size_x + xx] != 0)
-                        return false;
-                }
-            }
-            return true;
-        }
-
-        void addItem(InventoryItem item)
-        {
-            if (canPlaceItem(item.x, item.y, item.width, item.height))
-            {
-                // Segna gli slot come occupati
-                for (int yy = item.y; yy < item.y + item.height; yy++)
-                {
-                    for (int xx = item.x; xx < item.x + item.width; xx++)
-                    {
-                        grid[yy * size_x + xx] = 1;
-                    }
-                }
-                items.push_back(item);
-            }
-        }
-        void renderPreview(Model *modelPtr)
-        {
-            if (!modelPtr)
-                return;
-
-            auto renderCamera = getChildOfType<GameCamera>();
-            BeginTextureMode(previewRenderTarget);
-            ClearBackground(DARKGRAY);
-            renderCamera->beginMode3D();
-
-            DrawModel(*modelPtr, {0, 0, 0}, 1.0f, BLACK);
-
-            renderCamera->endMode3D();
-            EndTextureMode();
-        }
-        void update() override;
-        void gui() override
-        {
-            if (IsKeyPressed(KEY_I))
-                isOpen = !isOpen;
-            if (!isOpen)
-                return;
-            ImGui::Begin("Inventory", &isOpen);
-            ImVec2 previewSize = ImVec2(200, 200);
-            if (previewRenderTarget.texture.id > 0)
-            {
-                auto root = getRoot();
-                rlImGuiImageRenderTexture(&previewRenderTarget);
-            }
-
-            ImGui::Separator();
-            ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
-            ImDrawList *draw_list = ImGui::GetWindowDrawList();
-            for (int i = 0; i <= size_x; i++)
-                draw_list->AddLine(ImVec2(canvas_p0.x + i * slotSize, canvas_p0.y),
-                                   ImVec2(canvas_p0.x + i * slotSize, canvas_p0.y + size_y * slotSize),
-                                   ImColor(150, 150, 150, 50));
-
-            for (int j = 0; j <= size_y; j++)
-                draw_list->AddLine(ImVec2(canvas_p0.x, canvas_p0.y + j * slotSize),
-                                   ImVec2(canvas_p0.x + size_x * slotSize, canvas_p0.y + j * slotSize),
-                                   ImColor(150, 150, 150, 50));
-            ImGui::InvisibleButton("grid_bin", ImVec2(size_x * slotSize, size_y * slotSize));
-            ImGui::End();
-        }
-    };
 }
+
+struct InventoryItem {
+    std::string name;
+    int gridX = -1, gridY = -1; // Position in grid (-1 = not placed)
+    int width = 1, height = 1;  // Size in grid cells
+    ImU32 color = IM_COL32(100, 140, 200, 255);
+    EquipmentSlot compatibleSlot =
+        EquipmentSlot::COUNT; // COUNT means not equippable
+    int stackCount = 1;
+    int maxStack = 1;
+    bool equipped = false;
+};
+
+class Inventory : public GameObject {
+  private:
+    int m_gridCols;
+    int m_gridRows;
+    float m_slotSize = 48.0f;
+    float m_equipSlotSize = 36.0f;
+
+    // Grid occupancy: -1 = empty, otherwise index into m_items
+    std::vector<int> m_grid;
+    std::vector<InventoryItem> m_items;
+
+    // Equipment: -1 = no item equipped, otherwise index into m_items
+    std::array<int, static_cast<int>(EquipmentSlot::COUNT)> m_equipped;
+
+    // 3D character preview
+    RenderTexture2D m_previewRT = {0};
+    Camera3D m_previewCamera = {0};
+    bool m_previewInitialized = false;
+    float m_previewYaw = 0.0f;
+
+    static constexpr int PREVIEW_W = 300;
+    static constexpr int PREVIEW_H = 400;
+
+    // Internal drawing helpers
+    void initPreview();
+    void renderCharacterPreview();
+    void drawPreviewZone();
+    void drawEquipmentZone();
+    void drawGridZone();
+    void drawEquipSlotGrid(const char *label, EquipmentSlot slot, int slotW,
+                           int slotH, ImVec2 pos);
+
+    // Grid helpers
+    void markGrid(int gx, int gy, int w, int h, int value);
+    void clearItemFromGrid(int itemIdx);
+    int findFirstFreePosition(int w, int h) const;
+
+  public:
+    bool isOpen = false;
+
+    Inventory(int cols, int rows);
+    ~Inventory();
+
+    bool canPlace(int gx, int gy, int w, int h, int ignoreIdx = -1) const;
+    int addItem(InventoryItem item);
+    bool removeItem(int itemIdx);
+    bool equipItem(int itemIdx);
+    bool unequipItem(EquipmentSlot slot);
+
+    int itemCount() const { return static_cast<int>(m_items.size()); }
+    const InventoryItem *getItem(int idx) const;
+
+    void update() override;
+    void gui() override;
+};
+
+} // namespace moiras

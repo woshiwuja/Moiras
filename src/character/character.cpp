@@ -31,7 +31,7 @@ namespace moiras
           quat_rotation{1.0, 0.0, 0.0, 0.0}, eulerRot{0, 0, 0}
     {
         quat_rotation = QuaternionFromEuler(eulerRot.x, eulerRot.y, eulerRot.z);
-        auto inventory = std::make_unique<Inventory>(20, 40);
+        auto inventory = std::make_unique<Inventory>(10, 6);
         inventory.get()->setName("Inventory");
         addChild(std::move(inventory));
     }

@@ -386,16 +386,16 @@ namespace moiras
         }
 
         // Only update bone matrices when the animation frame actually changes.
-        // Since animVertices/animNormals are null on local meshes, UpdateModelAnimation
-        // only computes bone matrices (cheap) and skips CPU vertex skinning (expensive).
-        // The GPU shader handles vertex transformation via the bone matrices uniform.
+        // We use UpdateModelAnimationBones (not UpdateModelAnimation) because our
+        // local meshes have animVertices/animNormals set to null for GPU skinning.
+        // UpdateModelAnimation writes directly to animVertices without a null check,
+        // which would segfault. UpdateModelAnimationBones only computes bone matrices.
         if (m_currentFrame == m_lastUpdatedFrame)
         {
             return;
         }
         m_lastUpdatedFrame = m_currentFrame;
 
-        // Build a temporary Model structure for UpdateModelAnimation
         Model tempModel = {0};
         tempModel.meshCount = modelInstance.meshCount();
         tempModel.meshes = modelInstance.meshes();
@@ -406,8 +406,8 @@ namespace moiras
         tempModel.bones = modelInstance.bones();
         tempModel.bindPose = modelInstance.bindPose();
 
-        // Update bone matrices only (GPU skinning path)
-        UpdateModelAnimation(tempModel, anim, m_currentFrame);
+        // Only update bone matrices — GPU shader handles vertex transformation
+        UpdateModelAnimationBones(tempModel, anim, m_currentFrame);
     }
 
 } // namespace moiras

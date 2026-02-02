@@ -26,6 +26,7 @@ public:
   int m_animationCount = 0;
   int m_currentAnimIndex = -1;
   int m_currentFrame = 0;
+  int m_lastUpdatedFrame = -1;
   float m_animationTimer = 0.0f;
   bool m_isAnimating = false;
 

@@ -1,4 +1,5 @@
 #include "game_object.h"
+#include "../scripting/ScriptComponent.hpp"
 #include <iostream>
 #include <memory>
 
@@ -19,10 +20,12 @@ namespace moiras
 
   // Move constructor
   GameObject::GameObject(GameObject &&other) noexcept
-      : children(std::move(other.children)),
+      : m_scriptComponent(std::move(other.m_scriptComponent)),
+        children(std::move(other.children)),
         parent(other.parent),
         id(other.id),
         name(std::move(other.name)),
+        tag(std::move(other.tag)),
         isVisible(other.isVisible),
         position(other.position)
   {
@@ -44,10 +47,12 @@ namespace moiras
   {
     if (this != &other)
     {
+      m_scriptComponent = std::move(other.m_scriptComponent);
       children = std::move(other.children);
       parent = other.parent;
       id = other.id;
       name = std::move(other.name);
+      tag = std::move(other.tag);
       isVisible = other.isVisible;
       position = other.position;
 
@@ -62,6 +67,8 @@ namespace moiras
     }
     return *this;
   }
+
+  GameObject::~GameObject() = default;
 
   void GameObject::update()
   {
@@ -125,6 +132,12 @@ namespace moiras
       }
     }
     return nullptr;
+  }
+
+  void GameObject::attachScript(const std::string &scriptPath)
+  {
+    m_scriptComponent = std::make_unique<ScriptComponent>(this);
+    m_scriptComponent->loadScript(scriptPath);
   }
 
 } // namespace moiras

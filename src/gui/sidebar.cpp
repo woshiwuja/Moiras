@@ -1,6 +1,7 @@
 // filepicker.cpp
 #include "sidebar.h"
 #include "../building/structure_builder.h"
+#include "script_editor.h"
 #include "../../rlImGui/rlImGui.h"
 
 using namespace ImGui;
@@ -84,6 +85,12 @@ namespace moiras
                 if (BeginTabItem("Building"))
                 {
                     drawBuildingTab();
+                    EndTabItem();
+                }
+
+                if (BeginTabItem("Scripting"))
+                {
+                    drawScriptingTab();
                     EndTabItem();
                 }
 
@@ -338,6 +345,20 @@ namespace moiras
             {
                 SetTargetFPS(fpsTarget);
             }
+
+            Spacing();
+            Separator();
+            Spacing();
+
+            // Outline shader toggle
+            if (this->outlineEnabled != nullptr)
+            {
+                Checkbox("Outline Shader", this->outlineEnabled);
+            }
+            else
+            {
+                TextColored(ImVec4(1, 0.5f, 0, 1), "Outline toggle not set");
+            }
         }
 
         if (CollapsingHeader("Debug"))
@@ -390,6 +411,70 @@ namespace moiras
                 drawGameObjectTree(obj->getChildAt(i));
             }
             TreePop();
+        }
+    }
+
+    void Sidebar::drawScriptingTab()
+    {
+        Text("Lua Script Editor");
+        Separator();
+        Spacing();
+
+        Text("Open the integrated Ned editor to edit");
+        Text("Lua scripts for your game objects.");
+        Spacing();
+
+        if (!scriptEditor)
+        {
+            TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Script editor not available");
+            Text("The editor will be initialized on first use.");
+            return;
+        }
+
+        bool isEditorOpen = scriptEditor->isOpen();
+        
+        if (Button(isEditorOpen ? "Hide Script Editor" : "Open Script Editor", ImVec2(-1, 40)))
+        {
+            scriptEditor->setOpen(!isEditorOpen);
+        }
+
+        Spacing();
+        Separator();
+        Spacing();
+
+        if (CollapsingHeader("Scripts Directory", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            Text("Scripts Path:");
+            TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "../assets/scripts");
+            
+            Spacing();
+            
+            if (Button("Refresh Scripts", ImVec2(-1, 0)))
+            {
+                TraceLog(LOG_INFO, "SCRIPTING: Refreshing scripts directory");
+            }
+        }
+
+        if (CollapsingHeader("Hot Reload"))
+        {
+            Text("Scripts are automatically reloaded");
+            Text("when changes are detected.");
+            
+            Spacing();
+            
+            Text("Hot reload check interval:");
+            TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "Every 60 frames (~1 sec)");
+        }
+
+        if (CollapsingHeader("Help"))
+        {
+            TextWrapped("The Ned editor provides syntax highlighting, "
+                       "LSP support, multi-cursor editing, and more.");
+            
+            Spacing();
+            
+            TextWrapped("Use Ctrl+S to save files, Ctrl+F to search, "
+                       "and Ctrl+P for the command palette.");
         }
     }
 } // namespace moiras

@@ -4,7 +4,11 @@
 #include "../character/character.h"
 #include "../gui/gui.h"
 #include "../gui/sidebar.h"
+#include "../gui/script_editor.h"
+#include "../input/input_manager.h"
 #include "../src/audio/audiodevice.hpp"
+#include "../scripting/ScriptEngine.hpp"
+#include "../scripting/ScriptComponent.hpp"
 #include "imgui.h"
 #include <memory>
 #include <raylib.h>
@@ -16,6 +20,12 @@ namespace moiras
 
   void Game::setup()
   {
+    // Initialize the Lua scripting engine
+    ScriptEngine::instance().initialize();
+    ScriptEngine::instance().setGameRoot(&root);
+    ScriptEngine::instance().setGame(this);
+    ScriptEngine::instance().setScriptsDirectory("../assets/scripts");
+
     // Create main camera
     auto mainCamera = std::make_unique<GameCamera>("MainCamera");
 
@@ -41,8 +51,16 @@ namespace moiras
     {
       sidebar->lightManager = &lightmanager;
       sidebar->modelManager = &modelManager;
+      sidebar->outlineEnabled = &this->outlineEnabled;
       TraceLog(LOG_INFO, "LightManager and ModelManager linked to Sidebar");
     }
+    
+    auto scriptEditorPtr = std::make_unique<ScriptEditor>();
+    scriptEditor = scriptEditorPtr.get();
+    scriptEditor->setOpen(true); // Start closed, can be toggled with F12
+    gui->addChild(std::move(scriptEditorPtr));
+    TraceLog(LOG_INFO, "Script Editor initialized (press F12 to open)");
+    TraceLog(LOG_WARNING, "Script Editor integration temporarily disabled (FileFinder crash)");
     auto audioManager = std::make_unique<AudioManager>();
     audioManager->setVolume(0.3);
     audioManager->loadMusicFolder("../assets/audio/music");
@@ -116,6 +134,7 @@ namespace moiras
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
     auto player = std::make_unique<Character>();
     player->name = "Player";
+    player->tag = "player";
     player->loadModel(modelManager, player->model_path);
     player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
     player->scale = .05f;
@@ -146,13 +165,67 @@ namespace moiras
 
     // Imposta lo shader condiviso per le strutture
     Structure::setSharedShader(celShader);
+
+    TraceLog(LOG_INFO, "SCRIPTING: Lua scripting system ready");
+  }
+
+  void Game::updateScriptsRecursive(GameObject *obj, float dt)
+  {
+    if (!obj)
+      return;
+    if (auto *script = obj->getScriptComponent())
+    {
+      if (script->isLoaded() && !script->hasError())
+      {
+        script->onUpdate(dt);
+      }
+    }
+    for (auto &child : obj->children)
+    {
+      if (child)
+      {
+        updateScriptsRecursive(child.get(), dt);
+      }
+    }
   }
 
   void Game::loop(Window window)
   {
     while (!window.shouldClose())
     {
+      // Update input manager and set context based on game state
+      InputManager& input = InputManager::getInstance();
+      
+      // Determine current context
+      if (scriptEditor && scriptEditor->isOpen()) {
+        input.setContext(InputContext::UI);
+      } else if (structureBuilder && structureBuilder->isBuildingMode()) {
+        input.setContext(InputContext::BUILDING);
+      } else {
+        input.setContext(InputContext::GAME);
+      }
+      
+      // Update input state (must be called before any input queries)
+      input.update();
+      
+      // Toggle script editor with F12 (always works)
+      if (input.isActionJustPressed(InputAction::UI_TOGGLE_SCRIPT_EDITOR) && scriptEditor)
+      {
+        scriptEditor->setOpen(!scriptEditor->isOpen());
+      }
+      
       root.update();
+
+      // Hot-reload check every 60 frames (~1 second at 60fps)
+      m_frameCount++;
+      if (m_frameCount % 60 == 0)
+      {
+        ScriptEngine::instance().hotReload();
+      }
+
+      // Update all Lua scripts
+      float dt = GetFrameTime();
+      updateScriptsRecursive(&root, dt);
 
       auto camera = root.getChildOfType<GameCamera>();
       auto map = root.getChildOfType<Map>();
@@ -205,15 +278,24 @@ namespace moiras
       camera->endMode3D();
       EndTextureMode();
 
-      // Draw to screen SENZA outline shader per ora
+      // Draw to screen
       camera->beginDrawing();
 
-      BeginShaderMode(outlineShader);
+      // Applica l'outline shader solo se abilitato
+      if (this->outlineEnabled)
+      {
+        BeginShaderMode(outlineShader);
+      }
+
       DrawTextureRec(renderTarget.texture,
                      (Rectangle){0, 0, (float)renderTarget.texture.width,
                                  (float)-renderTarget.texture.height},
                      (Vector2){0, 0}, WHITE);
-      EndShaderMode();
+
+      if (this->outlineEnabled)
+      {
+        EndShaderMode();
+      }
 
       camera->beginMode3D();
       if (map && map->showNavMeshDebug && map->navMeshBuilt)
@@ -249,6 +331,7 @@ namespace moiras
 
   Game::~Game()
   {
+    ScriptEngine::instance().shutdown();
     UnloadShader(outlineShader);
     UnloadRenderTexture(renderTarget);
     rlImGuiShutdown();

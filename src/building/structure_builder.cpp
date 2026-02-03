@@ -1,8 +1,9 @@
 #include "structure_builder.h"
+#include "../input/input_manager.h"
 #include "../map/map.h"
-#include "imgui.h"
 #include <algorithm>
 #include <raymath.h>
+#include <cfloat>
 
 namespace moiras {
 
@@ -94,17 +95,21 @@ void StructureBuilder::update() {
   if (!m_camera || !m_map)
     return;
 
+  // Use InputManager for all input handling
+  // InputManager automatically handles ImGui capture checking
+  InputManager& input = InputManager::getInstance();
+
   // Gestione input per rotazione (Q/E)
-  if (IsKeyDown(KEY_Q)) {
+  if (input.isActionActive(InputAction::BUILDING_ROTATE_CCW)) {
     rotatePreview(-2.0f * GetFrameTime());
   }
-  if (IsKeyDown(KEY_E)) {
+  if (input.isActionActive(InputAction::BUILDING_ROTATE_CW)) {
     rotatePreview(2.0f * GetFrameTime());
   }
 
   // Scroll per scala (opzionale)
-  float scroll = GetMouseWheelMove();
-  if (scroll != 0.0f && IsKeyDown(KEY_LEFT_SHIFT)) {
+  float scroll = input.getMouseWheelMove();
+  if (scroll != 0.0f && input.isActionActive(InputAction::BUILDING_SCALE_MODIFIER)) {
     m_previewScale += scroll * 0.1f;
     m_previewScale = Clamp(m_previewScale, 0.1f, 10.0f);
   }
@@ -116,15 +121,14 @@ void StructureBuilder::update() {
   m_isValidPlacement = checkPlacementValidity();
 
   // Click sinistro per piazzare
-  if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
-      !ImGui::GetIO().WantCaptureMouse) {
+  if (input.isActionJustPressed(InputAction::BUILDING_PLACE)) {
     if (m_isValidPlacement) {
       placeStructure();
     }
   }
 
   // Tasto ESC o click destro per uscire dalla modalita' building
-  if (IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+  if (input.isActionJustPressed(InputAction::BUILDING_CANCEL)) {
     exitBuildingMode();
   }
 }

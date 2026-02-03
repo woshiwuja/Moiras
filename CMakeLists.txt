@@ -1,6 +1,15 @@
-cmake_minimum_required(VERSION 4.1)
+cmake_minimum_required(VERSION 3.5...4.1)
 project(Moiras)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Allow older CMake versions in subdirectories
+if(POLICY CMP0048)
+    cmake_policy(SET CMP0048 NEW)
+endif()
+if(POLICY CMP0077)
+    cmake_policy(SET CMP0077 NEW)
+endif()
+
 include(FetchContent)
 
 set(GENERATE_DEBUG_SYMBOLS ON)
@@ -53,18 +62,69 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(RecastNavigation)
 
-# Crea libreria ImGui PRIMA dell'eseguibile
-add_subdirectory(imgui)
+FetchContent_Declare(
+    sol2
+    GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+    GIT_TAG v3.5.0
+)
+FetchContent_MakeAvailable(sol2)
+
+# Find dependencies for Ned editor
+find_package(OpenGL REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(CURL REQUIRED)
+find_package(Freetype REQUIRED)
+find_package(GLEW REQUIRED)
+
+# Configure Ned build options
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(USE_SSH OFF CACHE BOOL "" FORCE)
+
+# Use Ned's modified ImGui instead of our basic one
+# Build ImGui from Ned's lib directory with GLFW backend and Ned's config
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ned/lib/imgui)
+add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+)
+target_include_directories(imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+    ${IMGUI_DIR}/misc/freetype
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned  # For ned_imgui_config.h
+)
+target_compile_definitions(imgui PUBLIC IMGUI_USER_CONFIG="ned_imgui_config.h")
+target_link_libraries(imgui PUBLIC Freetype::Freetype glfw)
+
+# Add Ned's ImGui directories globally so Ned can find them
+include_directories(${IMGUI_DIR})
+include_directories(${IMGUI_DIR}/backends)
+include_directories(${IMGUI_DIR}/misc/freetype)
+
+# Add Ned subdirectory (only build ned_embed library)
+add_subdirectory(ned EXCLUDE_FROM_ALL)
 
 add_custom_target(copy_assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/resources ${CMAKE_CURRENT_BINARY_DIR}/resources
 )
+
+find_package(Lua 5.4 REQUIRED)
+include_directories(${LUA_INCLUDE_DIR})
+
 
 add_subdirectory(src)
 
 add_executable(
     Moiras
     src/main.cpp
+    src/gui/ned_stubs.cpp
     src/character/character.h
     src/character/character.cpp
     src/character/controller.h
@@ -101,6 +161,29 @@ add_executable(
     src/gui/inventory.hpp
     src/gui/inventory.cpp
     rlImGui/rlImGui.h
+    # Lua scripting system
+    src/scripting/ScriptEngine.hpp
+    src/scripting/ScriptEngine.cpp
+    src/scripting/ScriptComponent.hpp
+    src/scripting/ScriptComponent.cpp
+    src/scripting/LuaBindings.hpp
+    src/scripting/LuaBindings.cpp
+    src/scripting/bindings/MathBindings.hpp
+    src/scripting/bindings/MathBindings.cpp
+    src/scripting/bindings/InputBindings.hpp
+    src/scripting/bindings/InputBindings.cpp
+    src/scripting/bindings/WorldBindings.hpp
+    src/scripting/bindings/WorldBindings.cpp
+    src/scripting/bindings/GameObjectBindings.hpp
+    src/scripting/bindings/GameObjectBindings.cpp
+    src/scripting/bindings/CharacterBindings.hpp
+    src/scripting/bindings/CharacterBindings.cpp
+    # Script Editor
+    src/gui/script_editor.h
+    src/gui/script_editor.cpp
+    src/input/input_manager.cpp
+    src/input/input_manager.h
+    src/input/input_types.h
 )
 
 target_include_directories(Moiras PUBLIC
@@ -116,6 +199,11 @@ target_include_directories(Moiras PUBLIC
 target_include_directories(Moiras PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui
     ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui
+    ${sol2_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned/lib/utfcpp/source
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned/lib/imgui/backends
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned/lib/imgui/misc/freetype
 )
 
 # Disable Font Awesome in rlImGui (optional font icons)
@@ -130,5 +218,18 @@ target_link_libraries(Moiras
     Detour
     DetourCrowd
     DetourTileCache
-    lua5.4
+    ned_embed
+    gssapi_krb5  # Add this line
+    ${LUA_LIBRARIES}
+    GLEW::GLEW
+)
+
+# Allow multiple definitions for stb_image (used by both Raylib and Ned)
+target_link_options(Moiras PRIVATE -Wl,--allow-multiple-definition)
+
+# Copy scripts to build directory
+add_custom_command(TARGET Moiras POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/assets/scripts
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/../assets/scripts
 )

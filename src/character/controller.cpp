@@ -1,4 +1,5 @@
 #include "controller.h"
+#include "../input/input_manager.h"
 #include "../map/map.h"
 #include <raymath.h>
 #include <limits>
@@ -56,8 +57,12 @@ void CharacterController::update(GameCamera* camera) {
 }
 
 void CharacterController::handleMouseClick(GameCamera* camera) {
-    // Tasto destro del mouse: tenuto premuto per seguire il cursore
-    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+    // Use InputManager to check for character movement action
+    // InputManager automatically handles ImGui capture checking
+    InputManager& input = InputManager::getInstance();
+    
+    // Right mouse button: hold to follow cursor
+    if (input.isActionActive(InputAction::CHARACTER_MOVE)) {
         Vector3 hitPoint;
 
         if (raycastToNavMesh(camera, hitPoint)) {

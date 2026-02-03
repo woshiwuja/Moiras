@@ -7,6 +7,7 @@
 #include "../character/character.h"
 #include "../character/controller.h"
 #include "../building/structure_builder.h"
+#include "../gui/script_editor.h"
 #include "game_object.h"
 #include <memory>
 #include <raylib.h>
@@ -21,6 +22,9 @@ namespace moiras
     float farPlane;
     int depthTextureLoc;
     std::unordered_map<unsigned int, GameObject *> registry;
+    int m_frameCount = 0;
+
+    void updateScriptsRecursive(GameObject *obj, float dt);
 
   public:
     GameObject root;
@@ -28,6 +32,8 @@ namespace moiras
     ModelManager modelManager;
     std::unique_ptr<CharacterController> playerController;
     StructureBuilder *structureBuilder = nullptr;
+    ScriptEditor *scriptEditor = nullptr;
+    bool outlineEnabled = true; // Toggle per l'outline shader
     Game();
     ~Game();
     void setup();

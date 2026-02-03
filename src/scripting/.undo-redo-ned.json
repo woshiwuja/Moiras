@@ -1,0 +1,60 @@
+{
+    "files": {
+        "/home/federico/Moiras-git/src/scripting/moiras_lua/moiras_stlib.lua": {
+            "lastCommittedState": "func",
+            "maxStackSize": 50,
+            "redoStack": [],
+            "undoStack": [
+                {
+                    "cursor_after": 60,
+                    "cursor_before": 0,
+                    "inserted": "xdg-mime default org.gnome.Nautilus.desktop inode/directory\n",
+                    "position": 0,
+                    "removed": ""
+                },
+                {
+                    "cursor_after": 59,
+                    "cursor_before": 60,
+                    "inserted": "",
+                    "position": 59,
+                    "removed": "\n"
+                },
+                {
+                    "cursor_after": 47,
+                    "cursor_before": 59,
+                    "inserted": "",
+                    "position": 47,
+                    "removed": "de/directory"
+                },
+                {
+                    "cursor_after": 0,
+                    "cursor_before": 47,
+                    "inserted": "",
+                    "position": 0,
+                    "removed": "xdg-mime default org.gnome.Nautilus.desktop ino"
+                },
+                {
+                    "cursor_after": 1,
+                    "cursor_before": 0,
+                    "inserted": "f",
+                    "position": 0,
+                    "removed": ""
+                },
+                {
+                    "cursor_after": 2,
+                    "cursor_before": 1,
+                    "inserted": "u",
+                    "position": 1,
+                    "removed": ""
+                },
+                {
+                    "cursor_after": 4,
+                    "cursor_before": 2,
+                    "inserted": "nc",
+                    "position": 2,
+                    "removed": ""
+                }
+            ]
+        }
+    }
+}

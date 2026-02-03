@@ -5,3 +5,6 @@
 	path = JoltPhysics
 	url = https://github.com/jrouwe/JoltPhysics.git
 
+[submodule "ned"]
+	path = ned
+	url = https://github.com/woshiwuja/ned-no-ai.git

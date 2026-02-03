@@ -1,10 +1,12 @@
 #include "camera.h"
+#include "../input/input_manager.h"
 #include "../map/map.h"
 #include <limits>
 #include <raylib.h>
 namespace moiras {
 void handleCursor() {
-  if (IsKeyPressed(KEY_P)) {
+  InputManager& input = InputManager::getInstance();
+  if (input.isActionJustPressed(InputAction::CAMERA_TOGGLE_CURSOR)) {
     if (IsCursorHidden())
       EnableCursor();
     else
@@ -23,8 +25,9 @@ void GameCamera::cameraControl() {
     return;
   }
 
+  InputManager& input = InputManager::getInstance();
   float dt = GetFrameTime();
-  Vector2 mouseDelta = GetMouseDelta();
+  Vector2 mouseDelta = input.getMouseDelta();
 
   // Clamp mouse delta to prevent jumps
   mouseDelta.x = Clamp(mouseDelta.x, -300.0f, 300.0f);
@@ -55,13 +58,13 @@ void GameCamera::cameraControl() {
 
   Vector3 movement = {0};
 
-  if (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP))
+  if (input.isActionActive(InputAction::CAMERA_PAN_FORWARD))
     movement = Vector3Add(movement, Vector3Scale(forward, panSpeed));
-  if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN))
+  if (input.isActionActive(InputAction::CAMERA_PAN_BACK))
     movement = Vector3Add(movement, Vector3Scale(forward, -panSpeed));
-  if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT))
+  if (input.isActionActive(InputAction::CAMERA_PAN_RIGHT))
     movement = Vector3Add(movement, Vector3Scale(right, panSpeed));
-  if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))
+  if (input.isActionActive(InputAction::CAMERA_PAN_LEFT))
     movement = Vector3Add(movement, Vector3Scale(right, -panSpeed));
 
   rcamera.position = Vector3Add(rcamera.position, movement);
@@ -73,9 +76,9 @@ void GameCamera::cameraControl() {
     rotationPivot = Vector3Add(rotationPivot, movement);
   }
   // Middle mouse button rotation around target
-  if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
+  if (input.isActionActive(InputAction::CAMERA_ROTATE)) {
     // Al primo frame del click, trova il nuovo target al centro dello schermo
-    if (IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE)) {
+    if (input.isActionJustPressed(InputAction::CAMERA_ROTATE)) {
       Vector2 screenCenter = {GetScreenWidth() / 2.0f,
                               GetScreenHeight() / 2.0f};
       Ray centerRay = GetScreenToWorldRay(screenCenter, rcamera);
@@ -142,7 +145,7 @@ void GameCamera::cameraControl() {
   }
 
   // Mouse wheel zoom (move camera closer/farther from target)
-  float wheel = GetMouseWheelMove();
+  float wheel = input.getMouseWheelMove();
   if (fabsf(wheel) > 0.01f)
   {
     Vector3 zoomTarget;

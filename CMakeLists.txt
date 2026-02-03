@@ -1,6 +1,15 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.5...4.1)
 project(Moiras)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Allow older CMake versions in subdirectories
+if(POLICY CMP0048)
+    cmake_policy(SET CMP0048 NEW)
+endif()
+if(POLICY CMP0077)
+    cmake_policy(SET CMP0077 NEW)
+endif()
+
 include(FetchContent)
 
 set(GENERATE_DEBUG_SYMBOLS ON)
@@ -53,38 +62,54 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(RecastNavigation)
 
-# Fetch Lua 5.4
-FetchContent_Declare(
-    lua
-    URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
-    URL_HASH SHA256=9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30
-)
-FetchContent_Populate(lua)
-
-# Build Lua as a static library from source
-file(GLOB LUA_CORE_SOURCES ${lua_SOURCE_DIR}/src/*.c)
-# Remove standalone interpreter and compiler executables
-list(FILTER LUA_CORE_SOURCES EXCLUDE REGEX ".*/lua\\.c$")
-list(FILTER LUA_CORE_SOURCES EXCLUDE REGEX ".*/luac\\.c$")
-add_library(lua_static STATIC ${LUA_CORE_SOURCES})
-target_include_directories(lua_static PUBLIC ${lua_SOURCE_DIR}/src)
-if(UNIX)
-    target_compile_definitions(lua_static PRIVATE LUA_USE_POSIX)
-    target_link_libraries(lua_static PRIVATE m)
-endif()
-# Suppress warnings in Lua C code
-target_compile_options(lua_static PRIVATE -w)
-
-# Fetch Sol2 (header-only C++/Lua binding)
 FetchContent_Declare(
     sol2
     GIT_REPOSITORY https://github.com/ThePhD/sol2.git
-    GIT_TAG v3.3.0
+    GIT_TAG v3.5.0
 )
-FetchContent_Populate(sol2)
+FetchContent_MakeAvailable(sol2)
 
-# Crea libreria ImGui PRIMA dell'eseguibile
-add_subdirectory(imgui)
+# Find dependencies for Ned editor
+find_package(OpenGL REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(CURL REQUIRED)
+find_package(Freetype REQUIRED)
+find_package(GLEW REQUIRED)
+
+# Configure Ned build options
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(USE_SSH OFF CACHE BOOL "" FORCE)
+
+# Use Ned's modified ImGui instead of our basic one
+# Build ImGui from Ned's lib directory with GLFW backend and Ned's config
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ned/lib/imgui)
+add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+)
+target_include_directories(imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+    ${IMGUI_DIR}/misc/freetype
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned  # For ned_imgui_config.h
+)
+target_compile_definitions(imgui PUBLIC IMGUI_USER_CONFIG="ned_imgui_config.h")
+target_link_libraries(imgui PUBLIC Freetype::Freetype glfw)
+
+# Add Ned's ImGui directories globally so Ned can find them
+include_directories(${IMGUI_DIR})
+include_directories(${IMGUI_DIR}/backends)
+include_directories(${IMGUI_DIR}/misc/freetype)
+
+# Add Ned subdirectory (only build ned_embed library)
+add_subdirectory(ned EXCLUDE_FROM_ALL)
 
 add_custom_target(copy_assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/resources ${CMAKE_CURRENT_BINARY_DIR}/resources
@@ -148,6 +173,11 @@ add_executable(
     src/scripting/bindings/GameObjectBindings.cpp
     src/scripting/bindings/CharacterBindings.hpp
     src/scripting/bindings/CharacterBindings.cpp
+    # Script Editor
+    src/gui/script_editor.h
+    src/gui/script_editor.cpp
+    # Ned stubs for missing globals
+    src/gui/ned_stubs.cpp
 )
 
 target_include_directories(Moiras PUBLIC
@@ -164,6 +194,10 @@ target_include_directories(Moiras PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui
     ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui
     ${sol2_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned/lib/utfcpp/source
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned/lib/imgui/backends
+    ${CMAKE_CURRENT_SOURCE_DIR}/ned/lib/imgui/misc/freetype
 )
 
 # Disable Font Awesome in rlImGui (optional font icons)
@@ -178,8 +212,14 @@ target_link_libraries(Moiras
     Detour
     DetourCrowd
     DetourTileCache
-    lua_static
+    lua
+    ned_embed
+    GLEW::GLEW
+    gssapi_krb5
 )
+
+# Allow multiple definitions for stb_image (used by both Raylib and Ned)
+target_link_options(Moiras PRIVATE -Wl,--allow-multiple-definition)
 
 # Copy scripts to build directory
 add_custom_command(TARGET Moiras POST_BUILD

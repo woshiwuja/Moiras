@@ -9,6 +9,7 @@
 namespace moiras
 {
     class StructureBuilder; // Forward declaration
+    class ScriptEditor;     // Forward declaration
 
     class Sidebar : public GameObject
     {
@@ -27,6 +28,9 @@ namespace moiras
         // Puntatore al structure builder (settato dal Game)
         StructureBuilder *structureBuilder = nullptr;
 
+        // Puntatore allo script editor
+        ScriptEditor *scriptEditor = nullptr;
+
         bool showImGuiDemo = false;
         bool showStyleEditor = false;
 
@@ -37,6 +41,7 @@ namespace moiras
         void drawSceneTab(GameObject *root);
         void drawLightingTab();
         void drawBuildingTab();
+        void drawScriptingTab();
         void drawSettingsTab();
         void drawGameObjectTree(GameObject *obj);
     };

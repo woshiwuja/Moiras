@@ -4,6 +4,7 @@
 #include "../character/character.h"
 #include "../gui/gui.h"
 #include "../gui/sidebar.h"
+#include "../gui/script_editor.h"
 #include "../src/audio/audiodevice.hpp"
 #include "../scripting/ScriptEngine.hpp"
 #include "../scripting/ScriptComponent.hpp"
@@ -51,6 +52,13 @@ namespace moiras
       sidebar->modelManager = &modelManager;
       TraceLog(LOG_INFO, "LightManager and ModelManager linked to Sidebar");
     }
+    
+    auto scriptEditorPtr = std::make_unique<ScriptEditor>();
+    scriptEditor = scriptEditorPtr.get();
+    scriptEditor->setOpen(true); // Start closed, can be toggled with F12
+    gui->addChild(std::move(scriptEditorPtr));
+    TraceLog(LOG_INFO, "Script Editor initialized (press F12 to open)");
+    TraceLog(LOG_WARNING, "Script Editor integration temporarily disabled (FileFinder crash)");
     auto audioManager = std::make_unique<AudioManager>();
     audioManager->setVolume(0.3);
     audioManager->loadMusicFolder("../assets/audio/music");
@@ -183,6 +191,11 @@ namespace moiras
   {
     while (!window.shouldClose())
     {
+      if (IsKeyPressed(KEY_F12) && scriptEditor)
+      {
+        scriptEditor->setOpen(!scriptEditor->isOpen());
+      }
+      
       root.update();
 
       // Hot-reload check every 60 frames (~1 second at 60fps)

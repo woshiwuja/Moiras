@@ -33,6 +33,7 @@ namespace moiras
     std::unique_ptr<CharacterController> playerController;
     StructureBuilder *structureBuilder = nullptr;
     ScriptEditor *scriptEditor = nullptr;
+    bool outlineEnabled = true; // Toggle per l'outline shader
     Game();
     ~Game();
     void setup();

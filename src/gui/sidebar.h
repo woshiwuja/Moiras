@@ -31,6 +31,9 @@ namespace moiras
         // Puntatore allo script editor
         ScriptEditor *scriptEditor = nullptr;
 
+        // Puntatore al toggle outline shader
+        bool *outlineEnabled = nullptr;
+
         bool showImGuiDemo = false;
         bool showStyleEditor = false;
 

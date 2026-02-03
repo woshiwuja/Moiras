@@ -5,6 +5,7 @@
 #include "../gui/gui.h"
 #include "../gui/sidebar.h"
 #include "../gui/script_editor.h"
+#include "../input/input_manager.h"
 #include "../src/audio/audiodevice.hpp"
 #include "../scripting/ScriptEngine.hpp"
 #include "../scripting/ScriptComponent.hpp"
@@ -50,6 +51,7 @@ namespace moiras
     {
       sidebar->lightManager = &lightmanager;
       sidebar->modelManager = &modelManager;
+      sidebar->outlineEnabled = &this->outlineEnabled;
       TraceLog(LOG_INFO, "LightManager and ModelManager linked to Sidebar");
     }
     
@@ -191,7 +193,23 @@ namespace moiras
   {
     while (!window.shouldClose())
     {
-      if (IsKeyPressed(KEY_F12) && scriptEditor)
+      // Update input manager and set context based on game state
+      InputManager& input = InputManager::getInstance();
+      
+      // Determine current context
+      if (scriptEditor && scriptEditor->isOpen()) {
+        input.setContext(InputContext::UI);
+      } else if (structureBuilder && structureBuilder->isBuildingMode()) {
+        input.setContext(InputContext::BUILDING);
+      } else {
+        input.setContext(InputContext::GAME);
+      }
+      
+      // Update input state (must be called before any input queries)
+      input.update();
+      
+      // Toggle script editor with F12 (always works)
+      if (input.isActionJustPressed(InputAction::UI_TOGGLE_SCRIPT_EDITOR) && scriptEditor)
       {
         scriptEditor->setOpen(!scriptEditor->isOpen());
       }
@@ -260,15 +278,24 @@ namespace moiras
       camera->endMode3D();
       EndTextureMode();
 
-      // Draw to screen SENZA outline shader per ora
+      // Draw to screen
       camera->beginDrawing();
 
-      BeginShaderMode(outlineShader);
+      // Applica l'outline shader solo se abilitato
+      if (this->outlineEnabled)
+      {
+        BeginShaderMode(outlineShader);
+      }
+
       DrawTextureRec(renderTarget.texture,
                      (Rectangle){0, 0, (float)renderTarget.texture.width,
                                  (float)-renderTarget.texture.height},
                      (Vector2){0, 0}, WHITE);
-      EndShaderMode();
+
+      if (this->outlineEnabled)
+      {
+        EndShaderMode();
+      }
 
       camera->beginMode3D();
       if (map && map->showNavMeshDebug && map->navMeshBuilt)

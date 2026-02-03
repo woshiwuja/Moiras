@@ -124,6 +124,7 @@ add_subdirectory(src)
 add_executable(
     Moiras
     src/main.cpp
+    src/gui/ned_stubs.cpp
     src/character/character.h
     src/character/character.cpp
     src/character/controller.h
@@ -180,6 +181,9 @@ add_executable(
     # Script Editor
     src/gui/script_editor.h
     src/gui/script_editor.cpp
+    src/input/input_manager.cpp
+    src/input/input_manager.h
+    src/input/input_types.h
 )
 
 target_include_directories(Moiras PUBLIC
@@ -214,8 +218,9 @@ target_link_libraries(Moiras
     Detour
     DetourCrowd
     DetourTileCache
-    ${LUA_LIBRARIES}
     ned_embed
+    gssapi_krb5  # Add this line
+    ${LUA_LIBRARIES}
     GLEW::GLEW
 )
 

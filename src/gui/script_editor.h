@@ -35,6 +35,7 @@ private:
     bool m_isOpen;
     bool m_initialized;
     bool m_wasOpen = false;  // Track if window was open in the previous frame
+    bool m_shouldGrabFocus = false;  // Flag to request focus on next frame
     std::string m_currentScriptPath;
 
     void initializeEditor();

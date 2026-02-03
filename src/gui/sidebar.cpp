@@ -345,6 +345,20 @@ namespace moiras
             {
                 SetTargetFPS(fpsTarget);
             }
+
+            Spacing();
+            Separator();
+            Spacing();
+
+            // Outline shader toggle
+            if (this->outlineEnabled != nullptr)
+            {
+                Checkbox("Outline Shader", this->outlineEnabled);
+            }
+            else
+            {
+                TextColored(ImVec4(1, 0.5f, 0, 1), "Outline toggle not set");
+            }
         }
 
         if (CollapsingHeader("Debug"))

@@ -85,13 +85,28 @@ void ScriptEditor::gui()
     // Show Ned editor window
     ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
 
-    // Set focus when window is first opened
+    // Track if window state changed
     if (!m_wasOpen) {
-        ImGui::SetNextWindowFocus();
         m_wasOpen = true;
+    }
+    
+    // Request focus if needed
+    if (m_shouldGrabFocus) {
+        ImGui::SetNextWindowFocus();
+        m_shouldGrabFocus = false;
     }
 
     if (ImGui::Begin("Script Editor", &m_isOpen, ImGuiWindowFlags_MenuBar)) {
+        // Detect if user clicked in the window to grab focus
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            m_shouldGrabFocus = true;
+        }
+        
+        // Handle ESC to release focus from the editor window
+        if (ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            // Let the embedded editor handle ESC first
+            // If it doesn't consume it, we could close the window or release focus
+        }
         // Optional: Add menu bar for quick actions
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("File")) {

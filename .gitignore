@@ -1,11 +1,5 @@
 build/
 CMakeFiles/
 CMakeCache.txt
-.vscode/launch.json
-rlImGui/
 .cache/# ImGui - only core files needed, ignore examples/docs/backends
-imgui/*
-raylib/*
-raylib
-imgui/
 .cache/

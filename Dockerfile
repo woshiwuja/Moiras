@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Evita prompt interattivi durante l'installazione
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     libx11-dev \
     libxrandr-dev \
     libxi-dev \
+    libgtk-3-dev\
     libgl1-mesa-dev \
     libglu1-mesa-dev \
     libxcursor-dev \

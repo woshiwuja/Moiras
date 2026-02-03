@@ -115,6 +115,10 @@ add_custom_target(copy_assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/resources ${CMAKE_CURRENT_BINARY_DIR}/resources
 )
 
+find_package(Lua 5.4 REQUIRED)
+include_directories(${LUA_INCLUDE_DIR})
+
+
 add_subdirectory(src)
 
 add_executable(
@@ -176,8 +180,6 @@ add_executable(
     # Script Editor
     src/gui/script_editor.h
     src/gui/script_editor.cpp
-    # Ned stubs for missing globals
-    src/gui/ned_stubs.cpp
 )
 
 target_include_directories(Moiras PUBLIC
@@ -212,10 +214,9 @@ target_link_libraries(Moiras
     Detour
     DetourCrowd
     DetourTileCache
-    lua
+    ${LUA_LIBRARIES}
     ned_embed
     GLEW::GLEW
-    gssapi_krb5
 )
 
 # Allow multiple definitions for stb_image (used by both Raylib and Ned)

@@ -114,7 +114,7 @@ void Inventory::renderCharacterPreview() {
 
     // Render to texture
     BeginTextureMode(m_previewRT);
-    ClearBackground(BLACK);
+    ClearBackground(ColorAlpha(BLACK,0));
     BeginMode3D(m_previewCamera);
 
     // Bind per-instance animation data so preview matches the in-world pose

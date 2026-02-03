@@ -70,18 +70,27 @@ void ScriptEditor::update()
 
 void ScriptEditor::gui()
 {
-    if (!m_isOpen) return;
-    
+    if (!m_isOpen) {
+        m_wasOpen = false;
+        return;
+    }
+
     if (!m_initialized) {
         ImGui::Begin("Script Editor", &m_isOpen);
         ImGui::Text("Initializing editor...");
         ImGui::End();
         return;
     }
-    
+
     // Show Ned editor window
     ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
-    
+
+    // Set focus when window is first opened
+    if (!m_wasOpen) {
+        ImGui::SetNextWindowFocus();
+        m_wasOpen = true;
+    }
+
     if (ImGui::Begin("Script Editor", &m_isOpen, ImGuiWindowFlags_MenuBar)) {
         // Optional: Add menu bar for quick actions
         if (ImGui::BeginMenuBar()) {

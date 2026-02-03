@@ -2,6 +2,7 @@
 #include "../map/map.h"
 #include <raymath.h>
 #include <limits>
+#include "imgui.h"
 
 namespace moiras {
 
@@ -56,6 +57,11 @@ void CharacterController::update(GameCamera* camera) {
 }
 
 void CharacterController::handleMouseClick(GameCamera* camera) {
+    // Skip input processing if ImGui wants to capture the mouse
+    if (ImGui::GetIO().WantCaptureMouse) {
+        return;
+    }
+
     // Tasto destro del mouse: tenuto premuto per seguire il cursore
     if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
         Vector3 hitPoint;

@@ -34,8 +34,9 @@ private:
     std::unique_ptr<NedEmbed> m_nedEditor;
     bool m_isOpen;
     bool m_initialized;
+    bool m_wasOpen = false;  // Track if window was open in the previous frame
     std::string m_currentScriptPath;
-    
+
     void initializeEditor();
 };
 

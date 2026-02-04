@@ -70,9 +70,11 @@ class Inventory : public GameObject {
     Camera3D m_previewCamera = {0};
     bool m_previewInitialized = false;
     float m_previewYaw = 0.0f;
+    float m_previewUpdateTimer = 0.0f;  // Throttle preview rendering
 
     static constexpr int PREVIEW_W = 300;
     static constexpr int PREVIEW_H = 400;
+    static constexpr float PREVIEW_UPDATE_RATE = 1.0f / 30.0f;  // 30 FPS for preview
 
     // Internal drawing helpers
     void initPreview();

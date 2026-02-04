@@ -200,13 +200,8 @@ namespace moiras
 
             Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-            // Ensure per-instance animation data is bound for drawing
-            if (modelInstance.hasAnimationData())
-            {
-                modelInstance.bindAnimationData();
-            }
-
             // Disegna ogni mesh con il suo materiale
+            // Note: bindAnimationData/unbindAnimationData are no-ops with per-instance meshes
             for (int i = 0; i < modelInstance.meshCount(); i++)
             {
                 int materialIndex = modelInstance.meshMaterial()[i];
@@ -214,12 +209,6 @@ namespace moiras
 
                 // DrawMesh applica automaticamente lo shader del materiale
                 DrawMesh(modelInstance.meshes()[i], material, transform);
-            }
-
-            // Unbind per-instance data after drawing to restore shared state
-            if (modelInstance.hasAnimationData())
-            {
-                modelInstance.unbindAnimationData();
             }
         }
         else
@@ -277,6 +266,16 @@ namespace moiras
 
             // Prepare per-instance animation data so this character can animate independently
             modelInstance.prepareForAnimation();
+            
+            // Cache Model struct to avoid reconstruction every frame
+            m_cachedModel.meshCount = modelInstance.meshCount();
+            m_cachedModel.meshes = modelInstance.meshes();
+            m_cachedModel.materialCount = modelInstance.materialCount();
+            m_cachedModel.materials = modelInstance.materials();
+            m_cachedModel.meshMaterial = modelInstance.meshMaterial();
+            m_cachedModel.boneCount = modelInstance.boneCount();
+            m_cachedModel.bones = modelInstance.bones();
+            m_cachedModel.bindPose = modelInstance.bindPose();
         }
         else
         {
@@ -396,18 +395,9 @@ namespace moiras
         }
         m_lastUpdatedFrame = m_currentFrame;
 
-        Model tempModel = {0};
-        tempModel.meshCount = modelInstance.meshCount();
-        tempModel.meshes = modelInstance.meshes();
-        tempModel.materialCount = modelInstance.materialCount();
-        tempModel.materials = modelInstance.materials();
-        tempModel.meshMaterial = modelInstance.meshMaterial();
-        tempModel.boneCount = modelInstance.boneCount();
-        tempModel.bones = modelInstance.bones();
-        tempModel.bindPose = modelInstance.bindPose();
-
+        // Use cached Model struct to avoid reconstruction overhead every frame
         // Only update bone matrices — GPU shader handles vertex transformation
-        UpdateModelAnimationBones(tempModel, anim, m_currentFrame);
+        UpdateModelAnimationBones(m_cachedModel, anim, m_currentFrame);
     }
 
 } // namespace moiras

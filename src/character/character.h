@@ -29,6 +29,7 @@ public:
   int m_lastUpdatedFrame = -1;
   float m_animationTimer = 0.0f;
   bool m_isAnimating = false;
+  Model m_cachedModel = {0}; // Cached Model struct to avoid reconstruction every frame
 
   Character();
   ~Character();

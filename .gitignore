@@ -3,3 +3,6 @@ CMakeFiles/
 CMakeCache.txt
 .cache/# ImGui - only core files needed, ignore examples/docs/backends
 .cache/
+*.glb
+*.obj
+*.png

@@ -92,6 +92,12 @@ void Inventory::renderCharacterPreview() {
 
     if (!m_previewInitialized)
         initPreview();
+    
+    // Throttle preview rendering to 30 FPS to save performance
+    m_previewUpdateTimer += GetFrameTime();
+    if (m_previewUpdateTimer < PREVIEW_UPDATE_RATE)
+        return;
+    m_previewUpdateTimer = 0.0f;
 
     auto &mi = parent->modelInstance;
 
@@ -117,21 +123,13 @@ void Inventory::renderCharacterPreview() {
     ClearBackground(ColorAlpha(BLACK,0));
     BeginMode3D(m_previewCamera);
 
-    // Bind per-instance animation data so preview matches the in-world pose
-    if (mi.hasAnimationData()) {
-        mi.bindAnimationData();
-    }
-
     Matrix transform =
         MatrixScale(parent->scale, parent->scale, parent->scale);
 
+    // Note: bindAnimationData/unbindAnimationData are no-ops with per-instance meshes
     for (int i = 0; i < mi.meshCount(); i++) {
         int matIdx = mi.meshMaterial()[i];
         DrawMesh(mi.meshes()[i], mi.materials()[matIdx], transform);
-    }
-
-    if (mi.hasAnimationData()) {
-        mi.unbindAnimationData();
     }
 
     EndMode3D();
@@ -286,7 +284,9 @@ void Inventory::update() {
 }
 
 void Inventory::gui() {
-    if (IsKeyPressed(KEY_I))
+    // Only toggle inventory if ImGui is not capturing keyboard input
+    // (e.g., when script editor or other text fields are active)
+    if (IsKeyPressed(KEY_I) && !ImGui::GetIO().WantCaptureKeyboard)
         isOpen = !isOpen;
     if (!isOpen)
         return;

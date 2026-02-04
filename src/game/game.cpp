@@ -55,12 +55,18 @@ namespace moiras
       TraceLog(LOG_INFO, "LightManager and ModelManager linked to Sidebar");
     }
     
+    // Create script editor as child of GUI
     auto scriptEditorPtr = std::make_unique<ScriptEditor>();
     scriptEditor = scriptEditorPtr.get();
-    scriptEditor->setOpen(true); // Start closed, can be toggled with F12
+    scriptEditor->setOpen(false); // Start closed, can be toggled with F12
     gui->addChild(std::move(scriptEditorPtr));
+    
+    // Link script editor to sidebar
+    if (sidebar) {
+      sidebar->scriptEditor = scriptEditor;
+    }
+    
     TraceLog(LOG_INFO, "Script Editor initialized (press F12 to open)");
-    TraceLog(LOG_WARNING, "Script Editor integration temporarily disabled (FileFinder crash)");
     auto audioManager = std::make_unique<AudioManager>();
     audioManager->setVolume(0.3);
     audioManager->loadMusicFolder("../assets/audio/music");

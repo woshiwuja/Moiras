@@ -1,6 +1,7 @@
 #include "controller.h"
 #include "../input/input_manager.h"
 #include "../map/map.h"
+#include "../time/time_manager.h"
 #include <raymath.h>
 #include <limits>
 
@@ -198,7 +199,7 @@ void CharacterController::followPath() {
     direction = Vector3Normalize(direction);
 
     // Muove il character
-    float moveDistance = m_movementSpeed * GetFrameTime();
+    float moveDistance = m_movementSpeed * TimeManager::getInstance().getGameDeltaTime();
     Vector3 movement = Vector3Scale(direction, moveDistance);
 
     m_character->position = Vector3Add(m_character->position, movement);

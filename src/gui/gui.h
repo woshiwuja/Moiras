@@ -15,6 +15,7 @@ public:
   
   ~Gui();
   Gui();
+  void gui() override;
   void setModelManager(ModelManager* manager);
   
   // Get font by size (returns closest available)

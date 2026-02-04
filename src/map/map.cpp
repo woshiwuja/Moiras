@@ -1,9 +1,10 @@
 #include "map.h"
-#include "rlgl.h"
 #include "../models/models.h"
+#include "../time/time_manager.h"
 #include <imgui.h>
 #include <raylib.h>
 #include <raymath.h>
+#include <rlgl.h>
 #include <cstdio>
 
 namespace moiras {
@@ -123,7 +124,7 @@ void Map::loadSeaShader() {
 }
 
 void Map::update() {
-  hiddenTimeCounter += GetFrameTime();
+  hiddenTimeCounter += TimeManager::getInstance().getGameDeltaTime();
   SetShaderValue(seaShaderLoaded, GetShaderLocation(seaShaderLoaded, "time"),
                  &hiddenTimeCounter, SHADER_UNIFORM_FLOAT);
 };

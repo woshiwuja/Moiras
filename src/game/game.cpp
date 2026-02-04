@@ -6,6 +6,7 @@
 #include "../gui/sidebar.h"
 #include "../gui/script_editor.h"
 #include "../input/input_manager.h"
+#include "../time/time_manager.h"
 #include "../src/audio/audiodevice.hpp"
 #include "../scripting/ScriptEngine.hpp"
 #include "../scripting/ScriptComponent.hpp"
@@ -199,6 +200,9 @@ namespace moiras
   {
     while (!window.shouldClose())
     {
+      // Update TimeManager first (caches delta time for the frame)
+      TimeManager::getInstance().update();
+      
       // Update input manager and set context based on game state
       InputManager& input = InputManager::getInstance();
       
@@ -213,6 +217,22 @@ namespace moiras
       
       // Update input state (must be called before any input queries)
       input.update();
+      
+      // Handle pause toggle (works in any context)
+      if (input.isActionJustPressed(InputAction::UI_TOGGLE_PAUSE)) {
+        TimeManager::getInstance().togglePause();
+      }
+      
+      // Handle speed changes (works in any context)
+      if (input.isActionJustPressed(InputAction::UI_SPEED_NORMAL)) {
+        TimeManager::getInstance().setTimeScale(1.0f);
+      }
+      if (input.isActionJustPressed(InputAction::UI_SPEED_MEDIUM)) {
+        TimeManager::getInstance().setTimeScale(2.5f);
+      }
+      if (input.isActionJustPressed(InputAction::UI_SPEED_FAST)) {
+        TimeManager::getInstance().setTimeScale(5.0f);
+      }
       
       // Toggle script editor with F12 (always works)
       if (input.isActionJustPressed(InputAction::UI_TOGGLE_SCRIPT_EDITOR) && scriptEditor)
@@ -229,8 +249,8 @@ namespace moiras
         ScriptEngine::instance().hotReload();
       }
 
-      // Update all Lua scripts
-      float dt = GetFrameTime();
+      // Update all Lua scripts with scaled delta time
+      float dt = TimeManager::getInstance().getGameDeltaTime();
       updateScriptsRecursive(&root, dt);
 
       auto camera = root.getChildOfType<GameCamera>();

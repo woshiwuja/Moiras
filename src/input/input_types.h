@@ -32,6 +32,10 @@ enum class InputAction {
     
     // UI actions (always available)
     UI_TOGGLE_SCRIPT_EDITOR,
+    UI_TOGGLE_PAUSE,      // Space - pause/unpause game
+    UI_SPEED_NORMAL,      // 1 - set speed to 1x
+    UI_SPEED_MEDIUM,      // 2 - set speed to 2.5x
+    UI_SPEED_FAST,        // 3 - set speed to 5x
     UI_CONFIRM,
     UI_CANCEL
 };

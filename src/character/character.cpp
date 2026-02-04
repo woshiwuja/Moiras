@@ -2,6 +2,7 @@
 #include <limits>
 #include <raylib.h>
 #include "../gui/inventory.hpp"
+#include "../time/time_manager.h"
 #include <raymath.h>
 
 namespace moiras
@@ -171,7 +172,8 @@ namespace moiras
     {
         Vector3 axis = {0, 1, 0};
         float angularSpeed = 0.0f;
-        Quaternion deltaQuat = QuaternionFromAxisAngle(axis, angularSpeed * GetFrameTime());
+        // Use scaled time so rotation stops when paused
+        Quaternion deltaQuat = QuaternionFromAxisAngle(axis, angularSpeed * TimeManager::getInstance().getGameDeltaTime());
         quat_rotation = QuaternionMultiply(deltaQuat, quat_rotation);
         quat_rotation = QuaternionNormalize(quat_rotation);
         handleDroppedModel();
@@ -364,8 +366,8 @@ namespace moiras
 
         ModelAnimation &anim = m_animations[m_currentAnimIndex];
 
-        // Advance animation timer
-        m_animationTimer += GetFrameTime();
+        // Advance animation timer with scaled time (affected by game speed)
+        m_animationTimer += TimeManager::getInstance().getGameDeltaTime();
 
         // Calculate FPS (typically 30 or 60 for most animations)
         float animFPS = 30.0f; // Standard animation framerate

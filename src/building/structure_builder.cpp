@@ -1,5 +1,6 @@
 #include "structure_builder.h"
 #include "../input/input_manager.h"
+#include "../time/time_manager.h"
 #include "../map/map.h"
 #include <algorithm>
 #include <raymath.h>
@@ -99,12 +100,12 @@ void StructureBuilder::update() {
   // InputManager automatically handles ImGui capture checking
   InputManager& input = InputManager::getInstance();
 
-  // Gestione input per rotazione (Q/E)
+  // Gestione input per rotazione (Q/E) - use scaled time for gameplay feel
   if (input.isActionActive(InputAction::BUILDING_ROTATE_CCW)) {
-    rotatePreview(-2.0f * GetFrameTime());
+    rotatePreview(-2.0f * TimeManager::getInstance().getGameDeltaTime());
   }
   if (input.isActionActive(InputAction::BUILDING_ROTATE_CW)) {
-    rotatePreview(2.0f * GetFrameTime());
+    rotatePreview(2.0f * TimeManager::getInstance().getGameDeltaTime());
   }
 
   // Scroll per scala (opzionale)

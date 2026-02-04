@@ -163,6 +163,9 @@ add_executable(
     src/input/input_manager.cpp
     src/input/input_manager.h
     src/input/input_types.h
+    # Time management
+    src/time/time_manager.cpp
+    src/time/time_manager.h
 )
 
 target_include_directories(Moiras PUBLIC

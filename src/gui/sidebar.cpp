@@ -1,6 +1,7 @@
 // filepicker.cpp
 #include "sidebar.h"
 #include "../building/structure_builder.h"
+#include "../time/time_manager.h"
 #include "script_editor.h"
 #include "../../rlImGui/rlImGui.h"
 
@@ -279,6 +280,80 @@ namespace moiras
     {
         ImGuiStyle &style = GetStyle();
 
+        // Game Speed Controls
+        if (CollapsingHeader("Game Speed", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            auto& timeMgr = TimeManager::getInstance();
+            
+            // Status display
+            if (timeMgr.isPaused()) {
+                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 80, 80, 255));
+                Text("Status: PAUSED");
+                PopStyleColor();
+            } else {
+                float speed = timeMgr.getTimeScale();
+                Text("Status: Running at %.1fx", speed);
+            }
+            
+            Separator();
+            
+            // Pause button (full width)
+            bool isPaused = timeMgr.isPaused();
+            if (Button(isPaused ? "Resume (Space)" : "Pause (Space)", 
+                      ImVec2(-1, 40))) {
+                timeMgr.togglePause();
+            }
+            
+            Spacing();
+            
+            // Speed buttons (3 in a row)
+            BeginDisabled(isPaused);
+            
+            float currentSpeed = timeMgr.getTimeScale();
+            ImVec4 activeColor = ImVec4(0.3f, 0.7f, 0.3f, 1.0f);
+            float btnWidth = (GetContentRegionAvail().x - 8) / 3.0f;
+            
+            if (currentSpeed == 1.0f && !isPaused) {
+                PushStyleColor(ImGuiCol_Button, activeColor);
+            }
+            if (Button("1x (1)", ImVec2(btnWidth, 30))) {
+                timeMgr.setTimeScale(1.0f);
+            }
+            if (currentSpeed == 1.0f && !isPaused) {
+                PopStyleColor();
+            }
+            
+            SameLine();
+            
+            if (currentSpeed == 2.5f && !isPaused) {
+                PushStyleColor(ImGuiCol_Button, activeColor);
+            }
+            if (Button("2.5x (2)", ImVec2(btnWidth, 30))) {
+                timeMgr.setTimeScale(2.5f);
+            }
+            if (currentSpeed == 2.5f && !isPaused) {
+                PopStyleColor();
+            }
+            
+            SameLine();
+            
+            if (currentSpeed == 5.0f && !isPaused) {
+                PushStyleColor(ImGuiCol_Button, activeColor);
+            }
+            if (Button("5x (3)", ImVec2(btnWidth, 30))) {
+                timeMgr.setTimeScale(5.0f);
+            }
+            if (currentSpeed == 5.0f && !isPaused) {
+                PopStyleColor();
+            }
+            
+            EndDisabled();
+            
+            Spacing();
+            TextWrapped("Hotkeys work in-game. Camera and UI are not affected by speed.");
+        }
+
+        Spacing();
         Text("ImGui Settings");
         Separator();
 

@@ -1,8 +1,9 @@
 #include "WorldBindings.hpp"
 #include "../ScriptEngine.hpp"
 #include "../../game/game_object.h"
+#include "../../time/time_manager.h"
+#include <algorithm>
 #include <raylib.h>
-#include <string>
 #include <vector>
 
 namespace moiras
@@ -113,8 +114,9 @@ namespace moiras
     };
 
     // Utility functions
+    // Return scaled time so Lua scripts respect pause and speed
     world["get_frame_time"] = []()
-    { return GetFrameTime(); };
+    { return TimeManager::getInstance().getGameDeltaTime(); };
     world["get_time"] = []()
     { return GetTime(); };
     world["get_fps"] = []()

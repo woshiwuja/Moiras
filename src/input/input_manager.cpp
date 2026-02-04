@@ -118,6 +118,10 @@ bool InputManager::isActionAvailable(InputAction action) const {
         
         // UI actions always available
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
+        case InputAction::UI_TOGGLE_PAUSE:
+        case InputAction::UI_SPEED_NORMAL:
+        case InputAction::UI_SPEED_MEDIUM:
+        case InputAction::UI_SPEED_FAST:
         case InputAction::UI_CONFIRM:
         case InputAction::UI_CANCEL:
             return true;
@@ -128,6 +132,10 @@ bool InputManager::isActionAvailable(InputAction action) const {
 bool InputManager::isActionBlockedByUI(InputAction action) const {
     // UI actions are NEVER blocked
     if (action == InputAction::UI_TOGGLE_SCRIPT_EDITOR) return false;
+    if (action == InputAction::UI_TOGGLE_PAUSE) return false;
+    if (action == InputAction::UI_SPEED_NORMAL) return false;
+    if (action == InputAction::UI_SPEED_MEDIUM) return false;
+    if (action == InputAction::UI_SPEED_FAST) return false;
     if (action == InputAction::UI_CONFIRM) return false;
     if (action == InputAction::UI_CANCEL) return false;
     
@@ -165,6 +173,10 @@ bool InputManager::isKeyboardAction(InputAction action) const {
         case InputAction::BUILDING_SCALE_MODIFIER:
         case InputAction::BUILDING_CANCEL: // ESC can also cancel
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
+        case InputAction::UI_TOGGLE_PAUSE:
+        case InputAction::UI_SPEED_NORMAL:
+        case InputAction::UI_SPEED_MEDIUM:
+        case InputAction::UI_SPEED_FAST:
         case InputAction::UI_CONFIRM:
         case InputAction::UI_CANCEL:
             return true;
@@ -222,6 +234,14 @@ bool InputManager::getRawActionState(InputAction action) const {
         // UI actions
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
             return IsKeyDown(KEY_F12);
+        case InputAction::UI_TOGGLE_PAUSE:
+            return IsKeyDown(KEY_SPACE);
+        case InputAction::UI_SPEED_NORMAL:
+            return IsKeyDown(KEY_ONE);
+        case InputAction::UI_SPEED_MEDIUM:
+            return IsKeyDown(KEY_TWO);
+        case InputAction::UI_SPEED_FAST:
+            return IsKeyDown(KEY_THREE);
         case InputAction::UI_CONFIRM:
             return IsKeyDown(KEY_ENTER);
         case InputAction::UI_CANCEL:
@@ -281,6 +301,14 @@ bool InputManager::getRawActionJustPressed(InputAction action) const {
         // UI actions
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
             return IsKeyPressed(KEY_F12);
+        case InputAction::UI_TOGGLE_PAUSE:
+            return IsKeyPressed(KEY_SPACE);
+        case InputAction::UI_SPEED_NORMAL:
+            return IsKeyPressed(KEY_ONE);
+        case InputAction::UI_SPEED_MEDIUM:
+            return IsKeyPressed(KEY_TWO);
+        case InputAction::UI_SPEED_FAST:
+            return IsKeyPressed(KEY_THREE);
         case InputAction::UI_CONFIRM:
             return IsKeyPressed(KEY_ENTER);
         case InputAction::UI_CANCEL:
@@ -340,6 +368,14 @@ bool InputManager::getRawActionJustReleased(InputAction action) const {
         // UI actions
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
             return IsKeyReleased(KEY_F12);
+        case InputAction::UI_TOGGLE_PAUSE:
+            return IsKeyReleased(KEY_SPACE);
+        case InputAction::UI_SPEED_NORMAL:
+            return IsKeyReleased(KEY_ONE);
+        case InputAction::UI_SPEED_MEDIUM:
+            return IsKeyReleased(KEY_TWO);
+        case InputAction::UI_SPEED_FAST:
+            return IsKeyReleased(KEY_THREE);
         case InputAction::UI_CONFIRM:
             return IsKeyReleased(KEY_ENTER);
         case InputAction::UI_CANCEL:

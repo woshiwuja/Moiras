@@ -1,10 +1,9 @@
 #pragma once
-
+#include "Recast.h"
 #include "DetourNavMesh.h"
 #include "DetourNavMeshQuery.h"
 #include "DetourTileCache.h"
 #include "DetourTileCacheBuilder.h"
-#include "Recast.h"
 #include <raylib.h>
 #include <string>
 #include <functional>

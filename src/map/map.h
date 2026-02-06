@@ -3,11 +3,12 @@
 #include "../navigation/navmesh.h"
 #include "rlgl.h"
 #include <raylib.h>
+#include <functional>
 #include <string>
 namespace moiras {
 class Map : public GameObject {
 public:
-  void buildNavMesh();
+  void buildNavMesh(NavMesh::ProgressCallback progressCallback = nullptr);
   void drawNavMeshDebug();
 
 NavMesh navMesh;

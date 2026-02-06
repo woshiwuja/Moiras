@@ -129,7 +129,7 @@ void Map::update() {
                  &hiddenTimeCounter, SHADER_UNIFORM_FLOAT);
 };
 
-void Map::buildNavMesh() {
+void Map::buildNavMesh(NavMesh::ProgressCallback progressCallback) {
     if (model.meshCount == 0) return;
 
     // Percorso file cache
@@ -206,7 +206,7 @@ void Map::buildNavMesh() {
     }
 
     // Costruisci la navmesh tiled
-    navMeshBuilt = navMesh.buildTiled(model.meshes[0], model.transform);
+    navMeshBuilt = navMesh.buildTiled(model.meshes[0], model.transform, progressCallback);
 
     if (navMeshBuilt) {
         TraceLog(LOG_INFO, "NavMesh: Tiled build SUCCESS - %d tiles, %d total polygons",

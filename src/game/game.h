@@ -38,6 +38,7 @@ namespace moiras
     ~Game();
     void setup();
     void loop(Window window);
+    void renderLoadingFrame(const char *message, float progress);
     void registerObject(unsigned int id, GameObject *object)
     {
       if (object == nullptr)

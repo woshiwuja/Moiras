@@ -9,7 +9,7 @@
 namespace moiras {
 
 constexpr int MAX_LIGHTS = 256;
-constexpr int SHADOW_MAP_SIZE = 2048;
+constexpr int SHADOW_MAP_SIZE = 1024;
 constexpr int SHADOW_TEXTURE_SLOT = 14;
 
 class LightManager {
@@ -30,15 +30,17 @@ public:
 
   // Shadow mapping
   void setupShadowMap(const std::string &depthVsPath, const std::string &depthFsPath);
+  void registerShadowShader(Shader targetShader); // Call once during setup
   void updateLightSpaceMatrix(Vector3 cameraPos);
+  void updateShadowUniforms(); // Call each frame to push matrix/bias to registered shaders
   void beginShadowPass();
   void endShadowPass();
   void bindShadowMap();
-  void bindShadowMapToShader(Shader targetShader);
   Shader getShadowDepthShader() const { return shadowDepthShader; }
   Material getShadowMaterial() const { return shadowMaterial; }
   Matrix getLightSpaceMatrix() const { return lightSpaceMatrix; }
   bool areShadowsEnabled() const { return shadowsEnabled && shadowMapReady; }
+  int shadowUpdateInterval = 2; // Update shadow map every N frames
 
   // GUI per ImGui
   void gui();
@@ -68,12 +70,13 @@ public:
   int useTilingLoc = -1;
   bool useTiling = false;
 
-  // Shadow settings (public for GUI)
+  // Shadow settings (public for GUI and game loop)
   bool shadowsEnabled = true;
   float shadowOrthoSize = 150.0f;
   float shadowNear = 1.0f;
   float shadowFar = 500.0f;
   float shadowBias = 0.005f;
+  int shadowFrameCounter = 0;
 
 private:
   Shader shader = {0};
@@ -105,11 +108,17 @@ private:
   Matrix lightSpaceMatrix = {0};
   bool shadowMapReady = false;
 
-  // Shadow uniform locations (PBR shader)
-  int pbrShadowEnabledLoc = -1;
-  int pbrLightSpaceMatrixLoc = -1;
-  int pbrShadowMapLoc = -1;
-  int pbrShadowBiasLoc = -1;
+  // Cached shadow uniform locations per shader
+  struct ShadowShaderLocs {
+    Shader shader = {0};
+    int shadowEnabledLoc = -1;
+    int lightSpaceMatrixLoc = -1;
+    int shadowMapLoc = -1;
+    int shadowBiasLoc = -1;
+  };
+  static constexpr int MAX_SHADOW_SHADERS = 4;
+  ShadowShaderLocs shadowShaders[MAX_SHADOW_SHADERS];
+  int shadowShaderCount = 0;
 
   // Saved state for shadow pass
   Matrix savedProjection = {0};

@@ -45,11 +45,8 @@ void LightManager::loadShader(const std::string &vsPath,
     int numLights = MAX_LIGHTS;
     SetShaderValue(shader, GetShaderLocation(shader, "numOfLights"), &numLights, SHADER_UNIFORM_INT);
 
-    // Shadow uniform locations
-    pbrShadowEnabledLoc = GetShaderLocation(shader, "shadowsEnabled");
-    pbrLightSpaceMatrixLoc = GetShaderLocation(shader, "lightSpaceMatrix");
-    pbrShadowMapLoc = GetShaderLocation(shader, "shadowMap");
-    pbrShadowBiasLoc = GetShaderLocation(shader, "shadowBias");
+    // Register PBR shader for shadow uniforms (cached locations)
+    registerShadowShader(shader);
 
     // Apply initial PBR values
     updatePBRUniforms();
@@ -105,16 +102,18 @@ void LightManager::setupShadowMap(const std::string &depthVsPath,
     rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_WRAP_S, RL_TEXTURE_WRAP_CLAMP);
     rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_WRAP_T, RL_TEXTURE_WRAP_CLAMP);
 
-    // Bind shadow map sampler to PBR shader
-    if (shader.id > 0 && pbrShadowMapLoc >= 0) {
-        rlEnableShader(shader.id);
-        rlActiveTextureSlot(SHADOW_TEXTURE_SLOT);
-        rlEnableTexture(shadowMapDepthTex);
-        rlSetUniformSampler(pbrShadowMapLoc, SHADOW_TEXTURE_SLOT);
-        rlActiveTextureSlot(0);
-    }
-
     shadowMapReady = true;
+
+    // Bind shadow map sampler to all already-registered shadow shaders
+    for (int i = 0; i < shadowShaderCount; i++) {
+        if (shadowShaders[i].shader.id > 0 && shadowShaders[i].shadowMapLoc >= 0) {
+            rlEnableShader(shadowShaders[i].shader.id);
+            rlActiveTextureSlot(SHADOW_TEXTURE_SLOT);
+            rlEnableTexture(shadowMapDepthTex);
+            rlSetUniformSampler(shadowShaders[i].shadowMapLoc, SHADOW_TEXTURE_SLOT);
+            rlActiveTextureSlot(0);
+        }
+    }
     TraceLog(LOG_INFO, "LightManager: Shadow map initialized (%dx%d, FBO: %u, Depth: %u)",
              SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, shadowMapFBO, shadowMapDepthTex);
 }
@@ -155,17 +154,8 @@ void LightManager::updateLightSpaceMatrix(Vector3 cameraPos) {
 
     lightSpaceMatrix = MatrixMultiply(lightView, lightProj);
 
-    // Upload to PBR shader
-    if (shader.id > 0 && pbrLightSpaceMatrixLoc >= 0) {
-        SetShaderValueMatrix(shader, pbrLightSpaceMatrixLoc, lightSpaceMatrix);
-    }
-
-    // Upload shadow enabled and bias to PBR shader
-    if (shader.id > 0) {
-        int enabled = shadowsEnabled ? 1 : 0;
-        SetShaderValue(shader, pbrShadowEnabledLoc, &enabled, SHADER_UNIFORM_INT);
-        SetShaderValue(shader, pbrShadowBiasLoc, &shadowBias, SHADER_UNIFORM_FLOAT);
-    }
+    // Push matrix/bias/enabled to all registered shadow shaders
+    updateShadowUniforms();
 }
 
 void LightManager::beginShadowPass() {
@@ -181,21 +171,7 @@ void LightManager::beginShadowPass() {
     rlClearColor(255, 255, 255, 255);
     rlClearScreenBuffers();
 
-    // Find the first enabled directional light to get matrices
-    Light *dirLight = nullptr;
-    for (int i = 0; i < MAX_LIGHTS; i++) {
-        if (lights[i] && lights[i]->enabled &&
-            lights[i]->getType() == LightType::DIRECTIONAL) {
-            dirLight = lights[i];
-            break;
-        }
-    }
-
-    if (!dirLight) return;
-
-    // Set combined light space matrix as modelview, identity as projection.
-    // rlgl computes MVP = matModel * matView * matProjection internally,
-    // so MVP = matModel * lightSpaceMatrix * I = matModel * lightSpaceMatrix.
+    // Use pre-computed lightSpaceMatrix from updateLightSpaceMatrix()
     rlSetMatrixModelview(lightSpaceMatrix);
     rlSetMatrixProjection(MatrixIdentity());
 
@@ -225,38 +201,50 @@ void LightManager::bindShadowMap() {
     rlActiveTextureSlot(0);
 }
 
-void LightManager::bindShadowMapToShader(Shader targetShader) {
-    if (!shadowMapReady || targetShader.id == 0) return;
+void LightManager::registerShadowShader(Shader targetShader) {
+    if (targetShader.id == 0 || shadowShaderCount >= MAX_SHADOW_SHADERS) return;
 
-    // Get shadow uniform locations for the target shader
-    int shadowEnabledLoc = GetShaderLocation(targetShader, "shadowsEnabled");
-    int lightSpaceMatLoc = GetShaderLocation(targetShader, "lightSpaceMatrix");
-    int shadowMapLoc = GetShaderLocation(targetShader, "shadowMap");
-    int biasLoc = GetShaderLocation(targetShader, "shadowBias");
-
-    // Set lightSpaceMatrix
-    if (lightSpaceMatLoc >= 0) {
-        SetShaderValueMatrix(targetShader, lightSpaceMatLoc, lightSpaceMatrix);
+    // Check if already registered
+    for (int i = 0; i < shadowShaderCount; i++) {
+        if (shadowShaders[i].shader.id == targetShader.id) return;
     }
 
-    // Set shadow enabled
-    int enabled = (shadowsEnabled && shadowMapReady) ? 1 : 0;
-    if (shadowEnabledLoc >= 0) {
-        SetShaderValue(targetShader, shadowEnabledLoc, &enabled, SHADER_UNIFORM_INT);
-    }
+    ShadowShaderLocs &locs = shadowShaders[shadowShaderCount];
+    locs.shader = targetShader;
+    locs.shadowEnabledLoc = GetShaderLocation(targetShader, "shadowsEnabled");
+    locs.lightSpaceMatrixLoc = GetShaderLocation(targetShader, "lightSpaceMatrix");
+    locs.shadowMapLoc = GetShaderLocation(targetShader, "shadowMap");
+    locs.shadowBiasLoc = GetShaderLocation(targetShader, "shadowBias");
+    shadowShaderCount++;
 
-    // Set shadow bias
-    if (biasLoc >= 0) {
-        SetShaderValue(targetShader, biasLoc, &shadowBias, SHADER_UNIFORM_FLOAT);
-    }
-
-    // Bind shadow map sampler
-    if (shadowMapLoc >= 0) {
+    // Bind shadow map sampler once (texture unit doesn't change)
+    if (shadowMapReady && locs.shadowMapLoc >= 0) {
         rlEnableShader(targetShader.id);
         rlActiveTextureSlot(SHADOW_TEXTURE_SLOT);
         rlEnableTexture(shadowMapDepthTex);
-        rlSetUniformSampler(shadowMapLoc, SHADOW_TEXTURE_SLOT);
+        rlSetUniformSampler(locs.shadowMapLoc, SHADOW_TEXTURE_SLOT);
         rlActiveTextureSlot(0);
+    }
+
+    TraceLog(LOG_INFO, "LightManager: Registered shadow shader ID %d (slot %d)",
+             targetShader.id, shadowShaderCount - 1);
+}
+
+void LightManager::updateShadowUniforms() {
+    if (!shadowMapReady) return;
+
+    int enabled = shadowsEnabled ? 1 : 0;
+
+    for (int i = 0; i < shadowShaderCount; i++) {
+        ShadowShaderLocs &locs = shadowShaders[i];
+        if (locs.shader.id == 0) continue;
+
+        if (locs.lightSpaceMatrixLoc >= 0)
+            SetShaderValueMatrix(locs.shader, locs.lightSpaceMatrixLoc, lightSpaceMatrix);
+        if (locs.shadowEnabledLoc >= 0)
+            SetShaderValue(locs.shader, locs.shadowEnabledLoc, &enabled, SHADER_UNIFORM_INT);
+        if (locs.shadowBiasLoc >= 0)
+            SetShaderValue(locs.shader, locs.shadowBiasLoc, &shadowBias, SHADER_UNIFORM_FLOAT);
     }
 }
 
@@ -381,6 +369,7 @@ void LightManager::gui() {
     // Shadow settings
     if (ImGui::CollapsingHeader("Shadows")) {
         ImGui::Checkbox("Enable Shadows", &shadowsEnabled);
+        ImGui::SliderInt("Update Interval", &shadowUpdateInterval, 1, 6);
         ImGui::SliderFloat("Shadow Ortho Size", &shadowOrthoSize, 50.0f, 500.0f);
         ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0001f, 0.05f, "%.4f");
         ImGui::SliderFloat("Shadow Near", &shadowNear, 0.1f, 10.0f);

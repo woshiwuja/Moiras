@@ -197,9 +197,9 @@ namespace moiras
 
     // Setup shadow mapping
     renderLoadingFrame("Inizializzazione ombre...", 0.96f);
+    lightmanager.registerShadowShader(celShader);
     lightmanager.setupShadowMap("../assets/shaders/shadow_depth.vs",
                                  "../assets/shaders/shadow_depth.fs");
-    lightmanager.bindShadowMapToShader(celShader);
 
     renderLoadingFrame("Pronto!", 1.0f);
 
@@ -336,33 +336,35 @@ namespace moiras
         SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
       }
 
-      // Shadow pass: render depth from light's perspective
+      // Shadow pass: render depth from light's perspective (skip frames for perf)
       if (lightmanager.areShadowsEnabled()) {
-        lightmanager.updateLightSpaceMatrix(camera->rcamera.position);
+        lightmanager.shadowFrameCounter++;
+        bool shouldUpdateShadow = (lightmanager.shadowFrameCounter % lightmanager.shadowUpdateInterval) == 0;
 
-        // Update cel shader shadow uniforms each frame
-        lightmanager.bindShadowMapToShader(celShader);
+        if (shouldUpdateShadow) {
+          lightmanager.updateLightSpaceMatrix(camera->rcamera.position);
 
-        lightmanager.beginShadowPass();
+          lightmanager.beginShadowPass();
 
-        // Draw shadow casters with depth-only shader
-        Material shadowMat = lightmanager.getShadowMaterial();
+          // Draw shadow casters with depth-only shader
+          Material shadowMat = lightmanager.getShadowMaterial();
 
-        // Map terrain
-        if (map && map->model.meshCount > 0) {
-          Matrix mapTransform = MatrixMultiply(map->model.transform,
-              MatrixTranslate(map->position.x, map->position.y, map->position.z));
-          for (int i = 0; i < map->model.meshCount; i++) {
-            DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
+          // Map terrain
+          if (map && map->model.meshCount > 0) {
+            Matrix mapTransform = MatrixMultiply(map->model.transform,
+                MatrixTranslate(map->position.x, map->position.y, map->position.z));
+            for (int i = 0; i < map->model.meshCount; i++) {
+              DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
+            }
           }
+
+          // Characters, structures, and other shadow casters
+          drawShadowCastersRecursive(&root, shadowMat);
+
+          lightmanager.endShadowPass();
         }
 
-        // Characters, structures, and other shadow casters
-        drawShadowCastersRecursive(&root, shadowMat);
-
-        lightmanager.endShadowPass();
-
-        // Bind shadow map texture for the main render pass
+        // Bind shadow map texture for the main render pass (every frame)
         lightmanager.bindShadowMap();
       }
 

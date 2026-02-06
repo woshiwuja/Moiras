@@ -33,16 +33,14 @@ float ShadowCalculation(vec4 fragPosLS, vec3 normal, vec3 lightDir) {
     // Adaptive bias
     float bias = max(shadowBias * 5.0 * (1.0 - dot(normal, lightDir)), shadowBias);
 
-    // PCF for soft shadows
+    // 4-sample PCF for soft shadows
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
-            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
-            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
-        }
-    }
-    shadow /= 9.0;
+    shadow += currentDepth - bias > texture(shadowMap, projCoords.xy + vec2(-0.5, -0.5) * texelSize).r ? 1.0 : 0.0;
+    shadow += currentDepth - bias > texture(shadowMap, projCoords.xy + vec2( 0.5, -0.5) * texelSize).r ? 1.0 : 0.0;
+    shadow += currentDepth - bias > texture(shadowMap, projCoords.xy + vec2(-0.5,  0.5) * texelSize).r ? 1.0 : 0.0;
+    shadow += currentDepth - bias > texture(shadowMap, projCoords.xy + vec2( 0.5,  0.5) * texelSize).r ? 1.0 : 0.0;
+    shadow *= 0.25;
 
     return shadow;
 }

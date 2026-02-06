@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y \
     libwayland-dev \
     libglfw3-dev \
     libxkbcommon-dev \
+    liblua5.4-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Imposta la directory di lavoro

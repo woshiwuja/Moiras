@@ -198,7 +198,6 @@ target_link_libraries(Moiras
     Detour
     DetourCrowd
     DetourTileCache
-    gssapi_krb5
     ${LUA_LIBRARIES}
 )
 

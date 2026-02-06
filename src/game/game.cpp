@@ -336,7 +336,10 @@ namespace moiras
         SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
       }
 
-      // Shadow pass: render depth from light's perspective (skip frames for perf)
+      // Always push shadow enabled/disabled state to shaders so toggling works
+      lightmanager.updateShadowUniforms();
+
+      // Shadow pass: render depth from light's perspective (only when enabled)
       if (lightmanager.areShadowsEnabled()) {
         lightmanager.shadowFrameCounter++;
         bool shouldUpdateShadow = (lightmanager.shadowFrameCounter % lightmanager.shadowUpdateInterval) == 0;

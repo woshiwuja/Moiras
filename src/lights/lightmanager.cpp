@@ -114,6 +114,10 @@ void LightManager::setupShadowMap(const std::string &depthVsPath,
             rlActiveTextureSlot(0);
         }
     }
+
+    // Push initial shadow state to shaders (ensures shadowsEnabled=0 when defaulting off)
+    updateShadowUniforms();
+
     TraceLog(LOG_INFO, "LightManager: Shadow map initialized (%dx%d, FBO: %u, Depth: %u)",
              SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, shadowMapFBO, shadowMapDepthTex);
 }
@@ -153,9 +157,6 @@ void LightManager::updateLightSpaceMatrix(Vector3 cameraPos) {
                                     shadowNear, shadowFar);
 
     lightSpaceMatrix = MatrixMultiply(lightView, lightProj);
-
-    // Push matrix/bias/enabled to all registered shadow shaders
-    updateShadowUniforms();
 }
 
 void LightManager::beginShadowPass() {

@@ -6,48 +6,93 @@
 #include <unordered_map>
 #include <filesystem>
 #include <algorithm>
+#include <string>
+#include <vector>
+
 namespace moiras
 {
 
   class AudioManager : public GameObject
   {
   private:
+    // Store Music in unique_ptrs so pointers remain stable across map rehashes
+    std::unordered_map<std::string, std::unique_ptr<Music>> musicTracks;
     std::unordered_map<std::string, Sound> sounds;
-    std::unordered_map<std::string, Music> musicTracks;
-    float timePlayed = 0.0f;
+    std::string currentTrackName;
     bool paused = false;
     float volume = 0.8f;
 
+    // Sorted track names cache for consistent GUI ordering
+    std::vector<std::string> trackNames;
+
+    void rebuildTrackNames()
+    {
+      trackNames.clear();
+      trackNames.reserve(musicTracks.size());
+      for (const auto &[name, _] : musicTracks)
+      {
+        trackNames.push_back(name);
+      }
+      std::sort(trackNames.begin(), trackNames.end());
+    }
+
+    Music *getCurrentTrack()
+    {
+      if (currentTrackName.empty())
+        return nullptr;
+      auto it = musicTracks.find(currentTrackName);
+      if (it != musicTracks.end())
+        return it->second.get();
+      currentTrackName.clear();
+      return nullptr;
+    }
+
   public:
-    Music *currentMusicTrack;
-    AudioManager() { InitAudioDevice(); }
+    AudioManager()
+    {
+      // Larger buffer reduces risk of underruns that cause crackling
+      SetAudioStreamBufferSizeDefault(4096);
+      InitAudioDevice();
+    }
+
     ~AudioManager()
     {
       for (auto &[name, sound] : sounds)
-      { // C++17 structured bindings
+      {
         UnloadSound(sound);
       }
       for (auto &[name, music] : musicTracks)
-      { // C++17 structured bindings
-        UnloadMusicStream(music);
+      {
+        UnloadMusicStream(*music);
       }
       CloseAudioDevice();
     }
+
     void loadSound(const std::string &name, const std::string &path)
     {
       auto sound = LoadSound(path.c_str());
       sounds[name] = sound;
-    };
-
-    void setVolume (float otherVolume){
-      volume = otherVolume;
     }
+
+    void setVolume(float newVolume)
+    {
+      volume = newVolume;
+      // Apply to all loaded tracks immediately
+      for (auto &[name, music] : musicTracks)
+      {
+        SetMusicVolume(*music, volume);
+      }
+    }
+
     void loadMusic(const std::string &name, const std::string &filename)
     {
-      auto music = LoadMusicStream(filename.c_str());
-      SetMusicVolume(music, volume);
-      musicTracks[name] = music;
-    };
+      auto music = std::make_unique<Music>(LoadMusicStream(filename.c_str()));
+      music->looping = true;
+      SetMusicVolume(*music, volume);
+      musicTracks[name] = std::move(music);
+      rebuildTrackNames();
+    }
+
     void loadMusicFolder(const std::string &folderPath)
     {
       namespace fs = std::filesystem;
@@ -66,15 +111,11 @@ namespace moiras
             std::string filePath = entry.path().string();
             std::string extension = entry.path().extension().string();
 
-            // Convert extension to lowercase for safety
             std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
 
-            // Filter for common audio formats
             if (extension == ".mp3" || extension == ".wav" || extension == ".ogg" || extension == ".flac")
             {
-              // Using the filename (without extension) as the ID/Key for the map
               std::string musicId = entry.path().stem().string();
-
               loadMusic(musicId, filePath);
               TraceLog(LOG_INFO, "Auto-loaded music: %s from %s", musicId.c_str(), filePath.c_str());
             }
@@ -86,6 +127,7 @@ namespace moiras
         TraceLog(LOG_ERROR, "Failed to iterate music folder: %s", e.what());
       }
     }
+
     void playSound(const std::string &name)
     {
       auto it = sounds.find(name);
@@ -93,64 +135,172 @@ namespace moiras
       {
         PlaySound(it->second);
       }
-    };
+    }
+
     void playMusic(const std::string &name)
     {
       auto it = musicTracks.find(name);
       if (it != musicTracks.end())
       {
-        PlayMusicStream(it->second);
-        currentMusicTrack = &it->second;
+        // Stop current track if switching
+        Music *current = getCurrentTrack();
+        if (current && currentTrackName != name)
+        {
+          StopMusicStream(*current);
+        }
+
+        PlayMusicStream(*it->second);
+        SetMusicVolume(*it->second, volume);
+        currentTrackName = name;
+        paused = false;
       }
-    };
-    void stopMusic(const std::string &name)
+    }
+
+    void stopMusic()
     {
-      auto it = musicTracks.find(name);
-      if (it != musicTracks.end())
+      Music *current = getCurrentTrack();
+      if (current)
       {
-        StopMusicStream(it->second);
-        currentMusicTrack = nullptr;
+        StopMusicStream(*current);
       }
-    };
-    void gui() override
+      currentTrackName.clear();
+      paused = false;
+    }
+
+    void togglePause()
     {
-      ImGui::Begin("Audio Player");
-      if (musicTracks.empty())
+      Music *current = getCurrentTrack();
+      if (!current)
+        return;
+
+      if (paused)
       {
-        ImGui::Text("Nessun suono caricato.");
+        ResumeMusicStream(*current);
+        paused = false;
       }
       else
       {
-        for (auto &[name, music] : musicTracks)
+        PauseMusicStream(*current);
+        paused = true;
+      }
+    }
+
+    void gui() override
+    {
+      ImGui::Begin("Audio Player");
+
+      if (musicTracks.empty())
+      {
+        ImGui::Text("No music loaded.");
+        ImGui::End();
+        return;
+      }
+
+      Music *current = getCurrentTrack();
+
+      // -- Now playing section --
+      if (current)
+      {
+        float timePlayed = GetMusicTimePlayed(*current);
+        float timeLength = GetMusicTimeLength(*current);
+
+        ImGui::Text("Now playing: %s", currentTrackName.c_str());
+
+        // Progress bar
+        float progress = (timeLength > 0.0f) ? (timePlayed / timeLength) : 0.0f;
+        char overlay[64];
+        int playedMin = (int)timePlayed / 60;
+        int playedSec = (int)timePlayed % 60;
+        int totalMin = (int)timeLength / 60;
+        int totalSec = (int)timeLength % 60;
+        snprintf(overlay, sizeof(overlay), "%d:%02d / %d:%02d", playedMin, playedSec, totalMin, totalSec);
+        ImGui::ProgressBar(progress, ImVec2(-1, 0), overlay);
+
+        // Seek via clicking on a slider
+        float seekPos = timePlayed;
+        ImGui::PushItemWidth(-1);
+        if (ImGui::SliderFloat("##seek", &seekPos, 0.0f, timeLength, ""))
         {
-          if (ImGui::Button(("Play " + name).c_str()))
+          SeekMusicStream(*current, seekPos);
+        }
+        ImGui::PopItemWidth();
+
+        // Transport controls
+        if (paused)
+        {
+          if (ImGui::Button("Resume"))
           {
-            PlayMusicStream(music);
-            currentMusicTrack = &music;
+            togglePause();
           }
-          if (ImGui::Button(("Pause" + name).c_str()))
+        }
+        else
+        {
+          if (ImGui::Button("Pause"))
           {
-            PauseMusicStream(music);
+            togglePause();
           }
-          if (ImGui::Button(("Stop" + name).c_str()))
-          {
-            if(currentMusicTrack != nullptr){
-            StopMusicStream(*currentMusicTrack);
-            currentMusicTrack = nullptr;
-            }
-          }
-          ImGui::SameLine();
-          ImGui::Text("(%s)", name.c_str());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Stop"))
+        {
+          stopMusic();
         }
       }
+      else
+      {
+        ImGui::Text("No track playing.");
+      }
+
+      ImGui::Separator();
+
+      // -- Volume control --
+      if (ImGui::SliderFloat("Volume", &volume, 0.0f, 1.0f, "%.0f%%"))
+      {
+        // Apply volume change to all tracks
+        for (auto &[name, music] : musicTracks)
+        {
+          SetMusicVolume(*music, volume);
+        }
+      }
+
+      ImGui::Separator();
+
+      // -- Track list --
+      ImGui::Text("Tracks:");
+      for (const auto &name : trackNames)
+      {
+        bool isCurrentTrack = (name == currentTrackName);
+
+        if (isCurrentTrack)
+        {
+          ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+        }
+
+        ImGui::PushID(name.c_str());
+        if (ImGui::Button(name.c_str(), ImVec2(-1, 0)))
+        {
+          playMusic(name);
+        }
+        ImGui::PopID();
+
+        if (isCurrentTrack)
+        {
+          ImGui::PopStyleColor(2);
+        }
+      }
+
       ImGui::End();
-    };
+    }
+
     void update() override
     {
-      if (currentMusicTrack != nullptr)
+      Music *current = getCurrentTrack();
+      if (current)
       {
-        UpdateMusicStream(*currentMusicTrack);
-      };
+        UpdateMusicStream(*current);
+      }
     }
-  }; // namespace moiras
-}
+  };
+
+} // namespace moiras

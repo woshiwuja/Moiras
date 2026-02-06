@@ -71,7 +71,7 @@ public:
   bool useTiling = false;
 
   // Shadow settings (public for GUI and game loop)
-  bool shadowsEnabled = true;
+  bool shadowsEnabled = false;
   float shadowOrthoSize = 150.0f;
   float shadowNear = 1.0f;
   float shadowFar = 500.0f;

@@ -434,6 +434,12 @@ namespace moiras
             {
                 TextColored(ImVec4(1, 0.5f, 0, 1), "Outline toggle not set");
             }
+
+            // Shadow toggle
+            if (this->lightManager != nullptr)
+            {
+                Checkbox("Shadows", &this->lightManager->shadowsEnabled);
+            }
         }
 
         if (CollapsingHeader("Debug"))

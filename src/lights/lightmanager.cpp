@@ -200,10 +200,20 @@ void LightManager::beginShadowPass() {
 
     rlEnableDepthTest();
     rlEnableDepthMask();
+    rlDisableColorBlend();
+
+    // Disable face culling so skinned meshes with varied winding still write depth.
+    // This ensures all geometry (characters, structures) casts shadows regardless
+    // of face orientation relative to the light.
+    rlDisableBackfaceCulling();
 }
 
 void LightManager::endShadowPass() {
     if (!shadowMapReady || !shadowsEnabled) return;
+
+    // Restore culling and blending state
+    rlEnableBackfaceCulling();
+    rlEnableColorBlend();
 
     rlDisableFramebuffer();
 

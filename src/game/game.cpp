@@ -336,9 +336,6 @@ namespace moiras
         SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
       }
 
-      // Always push shadow enabled/disabled state to shaders so toggling works
-      lightmanager.updateShadowUniforms();
-
       // Shadow pass: render depth from light's perspective (only when enabled)
       if (lightmanager.areShadowsEnabled()) {
         lightmanager.shadowFrameCounter++;
@@ -370,6 +367,10 @@ namespace moiras
         // Bind shadow map texture for the main render pass (every frame)
         lightmanager.bindShadowMap();
       }
+
+      // Push shadow uniforms AFTER the shadow pass so fragment shaders
+      // use the same lightSpaceMatrix the shadow map was rendered with.
+      lightmanager.updateShadowUniforms();
 
       // Render scene to texture
       BeginTextureMode(renderTarget);

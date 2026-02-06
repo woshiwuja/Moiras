@@ -18,6 +18,7 @@ uniform int useTiling;
 
 // Shadow mapping
 uniform mat4 lightSpaceMatrix;
+uniform float shadowNormalOffset;
 
 // Output per il Fragment Shader
 out vec3 fragPosition;
@@ -68,6 +69,7 @@ void main()
     // Passiamo anche la normale standard per calcoli di luce base
     fragNormal = N;
 
-    // 4. Shadow mapping: transform world position to light space
-    fragPosLightSpace = lightSpaceMatrix * vec4(fragPosition, 1.0);
+    // 4. Shadow mapping: offset world position along normal to reduce shadow acne
+    vec3 shadowPos = fragPosition + N * shadowNormalOffset;
+    fragPosLightSpace = lightSpaceMatrix * vec4(shadowPos, 1.0);
 }

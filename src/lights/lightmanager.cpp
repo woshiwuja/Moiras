@@ -96,9 +96,9 @@ void LightManager::setupShadowMap(const std::string &depthVsPath,
     }
     rlDisableFramebuffer();
 
-    // Set depth texture filtering
-    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MIN_FILTER, RL_TEXTURE_FILTER_NEAREST);
-    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MAG_FILTER, RL_TEXTURE_FILTER_NEAREST);
+    // Set depth texture filtering - LINEAR enables hardware interpolation for smoother PCF
+    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MIN_FILTER, RL_TEXTURE_FILTER_LINEAR);
+    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MAG_FILTER, RL_TEXTURE_FILTER_LINEAR);
     rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_WRAP_S, RL_TEXTURE_WRAP_CLAMP);
     rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_WRAP_T, RL_TEXTURE_WRAP_CLAMP);
 
@@ -140,10 +140,9 @@ void LightManager::updateLightSpaceMatrix(Vector3 cameraPos) {
     // Compute light direction (from light position toward target)
     Vector3 lightDir = Vector3Normalize(Vector3Subtract(dirLight->target, dirLight->position));
 
-    // Position the shadow camera behind the scene, centered on the player area
+    // Position the shadow camera centered on the player area
     Vector3 shadowCenter = cameraPos;
-    shadowCenter.y = 0.0f; // Focus at ground level
-    Vector3 lightPos = Vector3Subtract(shadowCenter, Vector3Scale(lightDir, shadowFar * 0.5f));
+    shadowCenter.y = 0.0f;
 
     // Handle edge case: light direction parallel to up vector
     Vector3 up = {0.0f, 1.0f, 0.0f};
@@ -151,7 +150,30 @@ void LightManager::updateLightSpaceMatrix(Vector3 cameraPos) {
         up = {0.0f, 0.0f, 1.0f};
     }
 
+    // Build light view matrix first (without snapping) to get the light-space axes
+    Vector3 lightPos = Vector3Subtract(shadowCenter, Vector3Scale(lightDir, shadowFar * 0.5f));
     Matrix lightView = MatrixLookAt(lightPos, shadowCenter, up);
+
+    // Snap shadow center to texel grid in light space to prevent shadow swimming
+    // when the camera moves. This quantizes movement to whole texel increments.
+    float texelSize = (2.0f * shadowOrthoSize) / (float)SHADOW_MAP_SIZE;
+    // Transform shadow center to light view space
+    float cx = lightView.m0 * shadowCenter.x + lightView.m4 * shadowCenter.y +
+               lightView.m8 * shadowCenter.z + lightView.m12;
+    float cy = lightView.m1 * shadowCenter.x + lightView.m5 * shadowCenter.y +
+               lightView.m9 * shadowCenter.z + lightView.m13;
+    // Snap to texel grid
+    cx = floorf(cx / texelSize) * texelSize;
+    cy = floorf(cy / texelSize) * texelSize;
+    // Compute snapped shadow center back in world space by offsetting
+    float dx = cx - (lightView.m0 * shadowCenter.x + lightView.m4 * shadowCenter.y +
+                     lightView.m8 * shadowCenter.z + lightView.m12);
+    float dy = cy - (lightView.m1 * shadowCenter.x + lightView.m5 * shadowCenter.y +
+                     lightView.m9 * shadowCenter.z + lightView.m13);
+    // Apply the snap offset to the light view matrix translation
+    lightView.m12 += dx;
+    lightView.m13 += dy;
+
     Matrix lightProj = MatrixOrtho(-shadowOrthoSize, shadowOrthoSize,
                                     -shadowOrthoSize, shadowOrthoSize,
                                     shadowNear, shadowFar);
@@ -216,6 +238,7 @@ void LightManager::registerShadowShader(Shader targetShader) {
     locs.lightSpaceMatrixLoc = GetShaderLocation(targetShader, "lightSpaceMatrix");
     locs.shadowMapLoc = GetShaderLocation(targetShader, "shadowMap");
     locs.shadowBiasLoc = GetShaderLocation(targetShader, "shadowBias");
+    locs.shadowNormalOffsetLoc = GetShaderLocation(targetShader, "shadowNormalOffset");
     shadowShaderCount++;
 
     // Bind shadow map sampler once (texture unit doesn't change)
@@ -246,6 +269,8 @@ void LightManager::updateShadowUniforms() {
             SetShaderValue(locs.shader, locs.shadowEnabledLoc, &enabled, SHADER_UNIFORM_INT);
         if (locs.shadowBiasLoc >= 0)
             SetShaderValue(locs.shader, locs.shadowBiasLoc, &shadowBias, SHADER_UNIFORM_FLOAT);
+        if (locs.shadowNormalOffsetLoc >= 0)
+            SetShaderValue(locs.shader, locs.shadowNormalOffsetLoc, &shadowNormalOffset, SHADER_UNIFORM_FLOAT);
     }
 }
 
@@ -373,6 +398,7 @@ void LightManager::gui() {
         ImGui::SliderInt("Update Interval", &shadowUpdateInterval, 1, 6);
         ImGui::SliderFloat("Shadow Ortho Size", &shadowOrthoSize, 50.0f, 500.0f);
         ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0001f, 0.05f, "%.4f");
+        ImGui::SliderFloat("Normal Offset", &shadowNormalOffset, 0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Shadow Near", &shadowNear, 0.1f, 10.0f);
         ImGui::SliderFloat("Shadow Far", &shadowFar, 100.0f, 2000.0f);
         if (shadowMapReady) {

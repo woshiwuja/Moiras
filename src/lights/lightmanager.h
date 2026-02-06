@@ -9,7 +9,7 @@
 namespace moiras {
 
 constexpr int MAX_LIGHTS = 256;
-constexpr int SHADOW_MAP_SIZE = 1024;
+constexpr int SHADOW_MAP_SIZE = 2048;
 constexpr int SHADOW_TEXTURE_SLOT = 14;
 
 class LightManager {
@@ -40,7 +40,7 @@ public:
   Material getShadowMaterial() const { return shadowMaterial; }
   Matrix getLightSpaceMatrix() const { return lightSpaceMatrix; }
   bool areShadowsEnabled() const { return shadowsEnabled && shadowMapReady; }
-  int shadowUpdateInterval = 2; // Update shadow map every N frames
+  int shadowUpdateInterval = 1; // Update shadow map every N frames
 
   // GUI per ImGui
   void gui();
@@ -76,6 +76,7 @@ public:
   float shadowNear = 1.0f;
   float shadowFar = 500.0f;
   float shadowBias = 0.005f;
+  float shadowNormalOffset = 0.3f;
   int shadowFrameCounter = 0;
 
 private:
@@ -115,6 +116,7 @@ private:
     int lightSpaceMatrixLoc = -1;
     int shadowMapLoc = -1;
     int shadowBiasLoc = -1;
+    int shadowNormalOffsetLoc = -1;
   };
   static constexpr int MAX_SHADOW_SHADERS = 4;
   ShadowShaderLocs shadowShaders[MAX_SHADOW_SHADERS];

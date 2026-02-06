@@ -15,6 +15,7 @@ uniform mat4 matModel;
 
 // Shadow mapping
 uniform mat4 lightSpaceMatrix;
+uniform float shadowNormalOffset;
 
 // GPU skinning: bone matrices uploaded by raylib during DrawMesh
 #define MAX_BONE_NUM 128
@@ -54,6 +55,7 @@ void main() {
     Normal = normalize(mat3(transpose(inverse(matModel))) * norm);
     gl_Position = mvp * pos;
 
-    // Shadow mapping: transform world position to light space
-    FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0);
+    // Shadow mapping: offset world position along normal to reduce shadow acne
+    vec3 shadowPos = FragPos + Normal * shadowNormalOffset;
+    FragPosLightSpace = lightSpaceMatrix * vec4(shadowPos, 1.0);
 }

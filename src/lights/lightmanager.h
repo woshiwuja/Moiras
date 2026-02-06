@@ -2,11 +2,15 @@
 
 #include "lights.h"
 #include <raylib.h>
+#include <raymath.h>
+#include <rlgl.h>
 #include <string>
 
 namespace moiras {
 
 constexpr int MAX_LIGHTS = 256;
+constexpr int SHADOW_MAP_SIZE = 2048;
+constexpr int SHADOW_TEXTURE_SLOT = 14;
 
 class LightManager {
 public:
@@ -23,6 +27,19 @@ public:
   void unload();
 
   void applyMaterial(const Material &material);
+
+  // Shadow mapping
+  void setupShadowMap(const std::string &depthVsPath, const std::string &depthFsPath);
+  void updateLightSpaceMatrix(Vector3 cameraPos);
+  void beginShadowPass();
+  void endShadowPass();
+  void bindShadowMap();
+  void bindShadowMapToShader(Shader targetShader);
+  Shader getShadowDepthShader() const { return shadowDepthShader; }
+  Material getShadowMaterial() const { return shadowMaterial; }
+  Matrix getLightSpaceMatrix() const { return lightSpaceMatrix; }
+  bool areShadowsEnabled() const { return shadowsEnabled && shadowMapReady; }
+
   // GUI per ImGui
   void gui();
 
@@ -49,7 +66,15 @@ public:
   Light *lights[MAX_LIGHTS] = {nullptr};
   int lightCount = 0;
   int useTilingLoc = -1;
-  bool useTiling = false; // Default: no tiling
+  bool useTiling = false;
+
+  // Shadow settings (public for GUI)
+  bool shadowsEnabled = true;
+  float shadowOrthoSize = 150.0f;
+  float shadowNear = 1.0f;
+  float shadowFar = 500.0f;
+  float shadowBias = 0.005f;
+
 private:
   Shader shader = {0};
 
@@ -71,6 +96,24 @@ private:
   int useTexNormalLoc = -1;
   int useTexMRALoc = -1;
   int useTexEmissiveLoc = -1;
+
+  // Shadow map resources
+  Shader shadowDepthShader = {0};
+  Material shadowMaterial = {0};
+  unsigned int shadowMapFBO = 0;
+  unsigned int shadowMapDepthTex = 0;
+  Matrix lightSpaceMatrix = {0};
+  bool shadowMapReady = false;
+
+  // Shadow uniform locations (PBR shader)
+  int pbrShadowEnabledLoc = -1;
+  int pbrLightSpaceMatrixLoc = -1;
+  int pbrShadowMapLoc = -1;
+  int pbrShadowBiasLoc = -1;
+
+  // Saved state for shadow pass
+  Matrix savedProjection = {0};
+  Matrix savedModelview = {0};
 
   void updatePBRUniforms();
 };

@@ -8,9 +8,13 @@ layout (location = 8) in vec4 vertexBoneWeights;
 out vec3 FragPos;
 out vec2 TexCoord;
 out vec3 Normal;
+out vec4 FragPosLightSpace;
 
 uniform mat4 mvp;
 uniform mat4 matModel;
+
+// Shadow mapping
+uniform mat4 lightSpaceMatrix;
 
 // GPU skinning: bone matrices uploaded by raylib during DrawMesh
 #define MAX_BONE_NUM 128
@@ -49,4 +53,7 @@ void main() {
     TexCoord = aTexCoord;
     Normal = normalize(mat3(transpose(inverse(matModel))) * norm);
     gl_Position = mvp * pos;
+
+    // Shadow mapping: transform world position to light space
+    FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0);
 }

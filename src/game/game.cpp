@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <memory>
 #include <raylib.h>
+#include <raymath.h>
 #include <rlgl.h>
 namespace moiras
 {
@@ -194,6 +195,12 @@ namespace moiras
     // Imposta lo shader condiviso per le strutture
     Structure::setSharedShader(celShader);
 
+    // Setup shadow mapping
+    renderLoadingFrame("Inizializzazione ombre...", 0.96f);
+    lightmanager.setupShadowMap("../assets/shaders/shadow_depth.vs",
+                                 "../assets/shaders/shadow_depth.fs");
+    lightmanager.bindShadowMapToShader(celShader);
+
     renderLoadingFrame("Pronto!", 1.0f);
 
     TraceLog(LOG_INFO, "SCRIPTING: Lua scripting system ready");
@@ -329,6 +336,36 @@ namespace moiras
         SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
       }
 
+      // Shadow pass: render depth from light's perspective
+      if (lightmanager.areShadowsEnabled()) {
+        lightmanager.updateLightSpaceMatrix(camera->rcamera.position);
+
+        // Update cel shader shadow uniforms each frame
+        lightmanager.bindShadowMapToShader(celShader);
+
+        lightmanager.beginShadowPass();
+
+        // Draw shadow casters with depth-only shader
+        Material shadowMat = lightmanager.getShadowMaterial();
+
+        // Map terrain
+        if (map && map->model.meshCount > 0) {
+          Matrix mapTransform = MatrixMultiply(map->model.transform,
+              MatrixTranslate(map->position.x, map->position.y, map->position.z));
+          for (int i = 0; i < map->model.meshCount; i++) {
+            DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
+          }
+        }
+
+        // Characters, structures, and other shadow casters
+        drawShadowCastersRecursive(&root, shadowMat);
+
+        lightmanager.endShadowPass();
+
+        // Bind shadow map texture for the main render pass
+        lightmanager.bindShadowMap();
+      }
+
       // Render scene to texture
       BeginTextureMode(renderTarget);
       ClearBackground(DARKBLUE);
@@ -416,9 +453,67 @@ namespace moiras
     }
   }
 
+  void Game::drawShadowCastersRecursive(GameObject *obj, Material &shadowMat)
+  {
+    if (!obj) return;
+
+    // Characters
+    if (auto *character = dynamic_cast<Character *>(obj))
+    {
+      if (character->isVisible && character->hasModel())
+      {
+        Quaternion q = QuaternionFromEuler(
+            character->eulerRot.x * DEG2RAD,
+            character->eulerRot.y * DEG2RAD,
+            character->eulerRot.z * DEG2RAD);
+        Vector3 axis;
+        float angle;
+        QuaternionToAxisAngle(q, &axis, &angle);
+        Matrix matScale = MatrixScale(character->scale, character->scale, character->scale);
+        Matrix matRotation = MatrixRotate(axis, angle);
+        Matrix matTranslation = MatrixTranslate(
+            character->position.x, character->position.y, character->position.z);
+        Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
+
+        for (int i = 0; i < character->modelInstance.meshCount(); i++)
+        {
+          DrawMesh(character->modelInstance.meshes()[i], shadowMat, transform);
+        }
+      }
+    }
+
+    // Structures
+    if (auto *structure = dynamic_cast<Structure *>(obj))
+    {
+      if (structure->isVisible && structure->hasModel())
+      {
+        Matrix matScale = MatrixScale(structure->scale, structure->scale, structure->scale);
+        Matrix matRotation = QuaternionToMatrix(structure->rotation);
+        Matrix matTranslation = MatrixTranslate(
+            structure->position.x, structure->position.y, structure->position.z);
+        Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
+
+        for (int i = 0; i < structure->modelInstance.meshCount(); i++)
+        {
+          DrawMesh(structure->modelInstance.meshes()[i], shadowMat, transform);
+        }
+      }
+    }
+
+    // Recurse into children
+    for (auto &child : obj->children)
+    {
+      if (child)
+      {
+        drawShadowCastersRecursive(child.get(), shadowMat);
+      }
+    }
+  }
+
   Game::~Game()
   {
     ScriptEngine::instance().shutdown();
+    lightmanager.unload();
     UnloadShader(outlineShader);
     UnloadRenderTexture(renderTarget);
     rlImGuiShutdown();

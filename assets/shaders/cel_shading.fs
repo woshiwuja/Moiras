@@ -1,8 +1,10 @@
 #version 330 core
+
+#define NUM_CASCADES 4
+
 in vec3 FragPos;
 in vec2 TexCoord;
 in vec3 Normal;
-in vec4 FragPosLightSpace;
 
 out vec4 finalColor;
 
@@ -10,11 +12,21 @@ uniform sampler2D texture0;
 uniform vec3 lightPos;
 uniform vec3 viewPos;
 
-// Shadow mapping
+// Shadow mapping (CSM)
 uniform sampler2D shadowMap;
 uniform int shadowsEnabled;
 uniform float shadowBias;
 uniform float shadowNormalOffset;
+uniform mat4 cascadeMatrices[NUM_CASCADES];
+uniform vec4 cascadeSplits;
+
+// Atlas quadrant offsets for 2x2 cascade layout
+const vec2 cascadeOffsets[NUM_CASCADES] = vec2[](
+    vec2(0.0, 0.0),
+    vec2(0.5, 0.0),
+    vec2(0.0, 0.5),
+    vec2(0.5, 0.5)
+);
 
 // 16-sample Poisson disk for soft shadow PCF
 const vec2 poissonDisk[16] = vec2[](
@@ -36,19 +48,33 @@ const vec2 poissonDisk[16] = vec2[](
     vec2( 0.14383161, -0.14100790)
 );
 
-float ShadowCalculation(vec4 fragPosLS, vec3 normal, vec3 lightDir) {
+float CSMShadowCalculation(vec3 fragPos, vec3 normal, vec3 lightDir) {
+    // Select cascade based on distance from camera
+    float dist = length(viewPos - fragPos);
+
+    int cascade = NUM_CASCADES - 1;
+    if (dist < cascadeSplits.x) cascade = 0;
+    else if (dist < cascadeSplits.y) cascade = 1;
+    else if (dist < cascadeSplits.z) cascade = 2;
+
+    // Apply normal offset and transform to light space
+    vec3 shadowPos = fragPos + normal * shadowNormalOffset;
+    vec4 fragPosLS = cascadeMatrices[cascade] * vec4(shadowPos, 1.0);
+
     // Perspective divide
     vec3 projCoords = fragPosLS.xyz / fragPosLS.w;
-    // Transform to [0,1] range
     projCoords = projCoords * 0.5 + 0.5;
 
     // Outside shadow map range - no shadow
     if (projCoords.z > 1.0) return 0.0;
 
-    // Smooth fade at shadow map edges to avoid hard cutoff
+    // Smooth fade at cascade edges
     vec2 edgeDist = min(projCoords.xy, 1.0 - projCoords.xy);
     float edgeFade = smoothstep(0.0, 0.05, min(edgeDist.x, edgeDist.y));
     if (edgeFade <= 0.0) return 0.0;
+
+    // Remap UV to the correct atlas quadrant
+    vec2 atlasUV = projCoords.xy * 0.5 + cascadeOffsets[cascade];
 
     float currentDepth = projCoords.z;
 
@@ -69,14 +95,21 @@ float ShadowCalculation(vec4 fragPosLS, vec3 normal, vec3 lightDir) {
     float spread = 2.0;
 
     for (int i = 0; i < 16; i++) {
-        vec2 offset = rotation * poissonDisk[i] * texelSize * spread;
-        float sampleDepth = texture(shadowMap, projCoords.xy + offset).r;
+        vec2 off = rotation * poissonDisk[i] * texelSize * spread;
+        float sampleDepth = texture(shadowMap, atlasUV + off).r;
         shadow += currentDepth - bias > sampleDepth ? 1.0 : 0.0;
     }
     shadow /= 16.0;
 
     // Apply edge fade
     shadow *= edgeFade;
+
+    // Fade out shadow at the far edge of the last cascade
+    if (cascade == NUM_CASCADES - 1) {
+        float fadeStart = cascadeSplits.w * 0.9;
+        float fadeFactor = 1.0 - smoothstep(fadeStart, cascadeSplits.w, dist);
+        shadow *= fadeFactor;
+    }
 
     return shadow;
 }
@@ -94,10 +127,10 @@ void main() {
     else if (diff > 0.4) intensity = 0.6;
     else                 intensity = 0.2;
 
-    // Apply shadow
+    // Apply CSM shadow
     float shadow = 0.0;
     if (shadowsEnabled == 1) {
-        shadow = ShadowCalculation(FragPosLightSpace, Normal, lightDir);
+        shadow = CSMShadowCalculation(FragPos, Normal, lightDir);
         // Reduce intensity in shadow, but keep minimum ambient
         intensity *= (1.0 - shadow * 0.7);
     }

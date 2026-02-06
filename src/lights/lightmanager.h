@@ -9,7 +9,9 @@
 namespace moiras {
 
 constexpr int MAX_LIGHTS = 256;
-constexpr int SHADOW_MAP_SIZE = 2048;
+constexpr int NUM_CASCADES = 4;
+constexpr int CASCADE_SIZE = 2048;
+constexpr int SHADOW_ATLAS_SIZE = CASCADE_SIZE * 2; // 4096 = 2x2 grid
 constexpr int SHADOW_TEXTURE_SLOT = 14;
 
 class LightManager {
@@ -28,19 +30,19 @@ public:
 
   void applyMaterial(const Material &material);
 
-  // Shadow mapping
+  // Shadow mapping (CSM)
   void setupShadowMap(const std::string &depthVsPath, const std::string &depthFsPath);
-  void registerShadowShader(Shader targetShader); // Call once during setup
-  void updateLightSpaceMatrix(Vector3 cameraPos);
-  void updateShadowUniforms(); // Call each frame to push matrix/bias to registered shaders
+  void registerShadowShader(Shader targetShader);
+  void updateCascadeMatrices(const Camera3D &camera, float cameraNear, float screenAspect);
+  void updateShadowUniforms();
   void beginShadowPass();
+  void setCascade(int cascade);
   void endShadowPass();
   void bindShadowMap();
   Shader getShadowDepthShader() const { return shadowDepthShader; }
   Material getShadowMaterial() const { return shadowMaterial; }
-  Matrix getLightSpaceMatrix() const { return lightSpaceMatrix; }
   bool areShadowsEnabled() const { return shadowsEnabled && shadowMapReady; }
-  int shadowUpdateInterval = 1; // Update shadow map every N frames
+  int shadowUpdateInterval = 1;
 
   // GUI per ImGui
   void gui();
@@ -72,11 +74,10 @@ public:
 
   // Shadow settings (public for GUI and game loop)
   bool shadowsEnabled = false;
-  float shadowOrthoSize = 150.0f;
-  float shadowNear = 1.0f;
   float shadowFar = 500.0f;
   float shadowBias = 0.005f;
   float shadowNormalOffset = 0.3f;
+  float cascadeLambda = 0.5f; // 0=uniform splits, 1=logarithmic splits
   int shadowFrameCounter = 0;
 
 private:
@@ -101,19 +102,21 @@ private:
   int useTexMRALoc = -1;
   int useTexEmissiveLoc = -1;
 
-  // Shadow map resources
+  // Shadow map resources (CSM)
   Shader shadowDepthShader = {0};
   Material shadowMaterial = {0};
   unsigned int shadowMapFBO = 0;
   unsigned int shadowMapDepthTex = 0;
-  Matrix lightSpaceMatrix = {0};
+  Matrix cascadeMatrices[NUM_CASCADES] = {};
+  float cascadeSplits[NUM_CASCADES] = {};
   bool shadowMapReady = false;
 
   // Cached shadow uniform locations per shader
   struct ShadowShaderLocs {
     Shader shader = {0};
     int shadowEnabledLoc = -1;
-    int lightSpaceMatrixLoc = -1;
+    int cascadeMatricesLoc[NUM_CASCADES] = {-1, -1, -1, -1};
+    int cascadeSplitsLoc = -1;
     int shadowMapLoc = -1;
     int shadowBiasLoc = -1;
     int shadowNormalOffsetLoc = -1;

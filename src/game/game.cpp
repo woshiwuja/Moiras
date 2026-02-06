@@ -330,36 +330,59 @@ namespace moiras
       lightmanager.updateCameraPosition(camera->rcamera.position);
       lightmanager.updateAllLights();
 
+      // Update cel shader uniforms needed for CSM shadow mapping
+      {
+        float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
+        SetShaderValue(celShader, GetShaderLocation(celShader, "viewPos"), camPos, SHADER_UNIFORM_VEC3);
+
+        // Set light position from first directional light for cel shading
+        for (int i = 0; i < MAX_LIGHTS; i++) {
+          if (lightmanager.lights[i] && lightmanager.lights[i]->enabled &&
+              lightmanager.lights[i]->getType() == LightType::DIRECTIONAL) {
+            float lpos[3] = {lightmanager.lights[i]->position.x,
+                             lightmanager.lights[i]->position.y,
+                             lightmanager.lights[i]->position.z};
+            SetShaderValue(celShader, GetShaderLocation(celShader, "lightPos"), lpos, SHADER_UNIFORM_VEC3);
+            break;
+          }
+        }
+      }
+
       // Update sea shader camera position
       if (map && map->seaShaderLoaded.id > 0 && map->seaViewPosLoc >= 0) {
         float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
         SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
       }
 
-      // Shadow pass: render depth from light's perspective (only when enabled)
+      // Shadow pass: render depth from light's perspective using CSM
       if (lightmanager.areShadowsEnabled()) {
         lightmanager.shadowFrameCounter++;
         bool shouldUpdateShadow = (lightmanager.shadowFrameCounter % lightmanager.shadowUpdateInterval) == 0;
 
         if (shouldUpdateShadow) {
-          lightmanager.updateLightSpaceMatrix(camera->rcamera.position);
+          float aspect = (float)GetScreenWidth() / (float)GetScreenHeight();
+          lightmanager.updateCascadeMatrices(camera->rcamera, nearPlane, aspect);
 
           lightmanager.beginShadowPass();
 
-          // Draw shadow casters with depth-only shader
           Material shadowMat = lightmanager.getShadowMaterial();
 
-          // Map terrain
-          if (map && map->model.meshCount > 0) {
-            Matrix mapTransform = MatrixMultiply(map->model.transform,
-                MatrixTranslate(map->position.x, map->position.y, map->position.z));
-            for (int i = 0; i < map->model.meshCount; i++) {
-              DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
-            }
-          }
+          // Render all shadow casters into each cascade
+          for (int c = 0; c < NUM_CASCADES; c++) {
+            lightmanager.setCascade(c);
 
-          // Characters, structures, and other shadow casters
-          drawShadowCastersRecursive(&root, shadowMat);
+            // Map terrain
+            if (map && map->model.meshCount > 0) {
+              Matrix mapTransform = MatrixMultiply(map->model.transform,
+                  MatrixTranslate(map->position.x, map->position.y, map->position.z));
+              for (int i = 0; i < map->model.meshCount; i++) {
+                DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
+              }
+            }
+
+            // Characters, structures, and other shadow casters
+            drawShadowCastersRecursive(&root, shadowMat);
+          }
 
           lightmanager.endShadowPass();
         }
@@ -369,7 +392,7 @@ namespace moiras
       }
 
       // Push shadow uniforms AFTER the shadow pass so fragment shaders
-      // use the same lightSpaceMatrix the shadow map was rendered with.
+      // use the same cascade matrices the shadow map was rendered with.
       lightmanager.updateShadowUniforms();
 
       // Render scene to texture

@@ -8,14 +8,9 @@ layout (location = 8) in vec4 vertexBoneWeights;
 out vec3 FragPos;
 out vec2 TexCoord;
 out vec3 Normal;
-out vec4 FragPosLightSpace;
 
 uniform mat4 mvp;
 uniform mat4 matModel;
-
-// Shadow mapping
-uniform mat4 lightSpaceMatrix;
-uniform float shadowNormalOffset;
 
 // GPU skinning: bone matrices uploaded by raylib during DrawMesh
 #define MAX_BONE_NUM 128
@@ -26,8 +21,6 @@ void main() {
     vec3 norm;
 
     // Check if vertex has bone skinning data.
-    // For non-skinned meshes the default attribute value is (0,0,0,1),
-    // so the sum of the first three components is 0.
     float skinWeight = vertexBoneWeights.x + vertexBoneWeights.y + vertexBoneWeights.z;
 
     if (skinWeight > 0.0) {
@@ -54,8 +47,4 @@ void main() {
     TexCoord = aTexCoord;
     Normal = normalize(mat3(transpose(inverse(matModel))) * norm);
     gl_Position = mvp * pos;
-
-    // Shadow mapping: offset world position along normal to reduce shadow acne
-    vec3 shadowPos = FragPos + Normal * shadowNormalOffset;
-    FragPosLightSpace = lightSpaceMatrix * vec4(shadowPos, 1.0);
 }

@@ -102,6 +102,12 @@ private:
     void loadOrGeneratePreviewTexture(const std::string& assetFilename);
     void generatePreviewTexture(const std::string& assetFilename, const std::string& previewPath);
     std::string getPreviewPath(const std::string& assetFilename);
+
+    // Loading overlay
+    void renderBuildingLoadScreen(const char* message);
+
+    // Deferred loading (for operations triggered from GUI callbacks)
+    bool m_pendingEnterBuild = false;
 };
 
 } // namespace moiras

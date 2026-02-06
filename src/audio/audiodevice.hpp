@@ -206,20 +206,16 @@ namespace moiras
 
         ImGui::Text("Now playing: %s", currentTrackName.c_str());
 
-        // Progress bar
-        float progress = (timeLength > 0.0f) ? (timePlayed / timeLength) : 0.0f;
-        char overlay[64];
+        // Seekable progress slider with time overlay
+        float seekPos = timePlayed;
         int playedMin = (int)timePlayed / 60;
         int playedSec = (int)timePlayed % 60;
         int totalMin = (int)timeLength / 60;
         int totalSec = (int)timeLength % 60;
-        snprintf(overlay, sizeof(overlay), "%d:%02d / %d:%02d", playedMin, playedSec, totalMin, totalSec);
-        ImGui::ProgressBar(progress, ImVec2(-1, 0), overlay);
-
-        // Seek via clicking on a slider
-        float seekPos = timePlayed;
+        char timeOverlay[64];
+        snprintf(timeOverlay, sizeof(timeOverlay), "%d:%02d / %d:%02d", playedMin, playedSec, totalMin, totalSec);
         ImGui::PushItemWidth(-1);
-        if (ImGui::SliderFloat("##seek", &seekPos, 0.0f, timeLength, ""))
+        if (ImGui::SliderFloat("##seek", &seekPos, 0.0f, timeLength, timeOverlay))
         {
           SeekMusicStream(*current, seekPos);
         }
@@ -254,9 +250,10 @@ namespace moiras
       ImGui::Separator();
 
       // -- Volume control --
-      if (ImGui::SliderFloat("Volume", &volume, 0.0f, 1.0f, "%.0f%%"))
+      float volumePercent = volume * 100.0f;
+      if (ImGui::SliderFloat("Volume", &volumePercent, 0.0f, 100.0f, "%.0f%%"))
       {
-        // Apply volume change to all tracks
+        volume = volumePercent / 100.0f;
         for (auto &[name, music] : musicTracks)
         {
           SetMusicVolume(*music, volume);

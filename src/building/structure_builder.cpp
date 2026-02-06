@@ -545,11 +545,23 @@ void StructureBuilder::generatePreviewTexture(const std::string &assetFilename,
 
 void StructureBuilder::renderBuildingLoadScreen(const char *message) {
   BeginDrawing();
-  ClearBackground({30, 30, 40, 255});
 
   rlImGuiBegin();
 
+  // Overlay scuro semitrasparente su tutto lo schermo
   ImGuiIO &io = ImGui::GetIO();
+  ImGui::SetNextWindowPos(ImVec2(0, 0));
+  ImGui::SetNextWindowSize(io.DisplaySize);
+  ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.4f));
+  ImGui::Begin("##BuildOverlay", nullptr,
+               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoInputs |
+                   ImGuiWindowFlags_NoBringToFrontOnFocus);
+  ImGui::End();
+  ImGui::PopStyleColor();
+
+  // Finestra di caricamento centrata
   float windowWidth = 350.0f;
   float windowHeight = 80.0f;
   ImGui::SetNextWindowPos(

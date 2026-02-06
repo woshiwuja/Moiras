@@ -75,7 +75,7 @@ public:
   // Shadow settings (public for GUI and game loop)
   bool shadowsEnabled = false;
   float shadowFar = 500.0f;
-  float shadowBias = 0.005f;
+  float shadowBias = 0.002f;
   float shadowNormalOffset = 0.3f;
   float cascadeLambda = 0.5f; // 0=uniform splits, 1=logarithmic splits
   int shadowFrameCounter = 0;

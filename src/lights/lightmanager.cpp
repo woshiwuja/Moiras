@@ -211,13 +211,21 @@ void LightManager::updateCascadeMatrices(const Camera3D &camera, float cameraNea
         // Round up radius to reduce jitter
         radius = ceilf(radius * 16.0f) / 16.0f;
 
-        // Build light view matrix
-        Vector3 lightPos = Vector3Subtract(center, Vector3Scale(lightDir, radius + shadowFar * 0.5f));
+        // Build light view matrix: position the light just far enough behind
+        // the cascade center to capture objects within the bounding sphere.
+        // Using a tight offset (2x radius) instead of shadowFar gives much
+        // better depth resolution, which is critical for small shadow casters
+        // like characters (scale 0.05 = ~5 world units tall).
+        float lightOffset = radius * 2.0f;
+        Vector3 lightPos = Vector3Subtract(center, Vector3Scale(lightDir, lightOffset));
         Matrix lightView = MatrixLookAt(lightPos, center, up);
 
-        // Build tight ortho projection that fits the bounding sphere
+        // Tight near/far: objects in the sphere span [offset-radius, offset+radius]
+        // from the light. Add margin for objects casting shadows from outside the sphere.
+        float projNear = 0.1f;
+        float projFar = lightOffset + radius + 100.0f;
         Matrix lightProj = MatrixOrtho(-radius, radius, -radius, radius,
-                                        0.1f, radius * 2.0f + shadowFar);
+                                        projNear, projFar);
 
         // Texel snapping: quantize the light-space translation to whole texel increments
         // to prevent shadow swimming when the camera moves

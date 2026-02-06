@@ -323,6 +323,12 @@ namespace moiras
       lightmanager.updateCameraPosition(camera->rcamera.position);
       lightmanager.updateAllLights();
 
+      // Update sea shader camera position
+      if (map && map->seaShaderLoaded.id > 0 && map->seaViewPosLoc >= 0) {
+        float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
+        SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
+      }
+
       // Render scene to texture
       BeginTextureMode(renderTarget);
       ClearBackground(DARKBLUE);

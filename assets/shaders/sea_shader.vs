@@ -11,8 +11,7 @@ uniform mat4 mvp;
 uniform mat4 matModel;
 uniform mat4 matNormal;
 
-uniform float time; 
-
+uniform float time;
 uniform sampler2D perlinNoiseMap;
 
 // Output vertex attributes (to fragment shader)
@@ -23,24 +22,41 @@ out float height;
 
 void main()
 {
-    // Calculate animated texture coordinates based on time and vertex position
-    vec2 animatedTexCoord = sin(vertexTexCoord + vec2(sin(time + vertexPosition.x*0.1), cos(time + vertexPosition.z*0.1))*0.3);
+    // Multi-octave wave displacement using perlin noise
+    vec2 uv1 = vertexTexCoord * 0.8 + vec2(time * 0.03, time * 0.02);
+    vec2 uv2 = vertexTexCoord * 1.5 + vec2(-time * 0.02, time * 0.04);
+    vec2 uv3 = vertexTexCoord * 3.0 + vec2(time * 0.05, -time * 0.01);
 
-    // Normalize animated texture coordinates to range [0, 1]
-    animatedTexCoord = animatedTexCoord*0.5 + 0.5;
+    float wave1 = texture(perlinNoiseMap, uv1).r;
+    float wave2 = texture(perlinNoiseMap, uv2).r * 0.5;
+    float wave3 = texture(perlinNoiseMap, uv3).r * 0.25;
 
-    // Fetch displacement from the perlin noise map
-    float displacement = texture(perlinNoiseMap, animatedTexCoord).r*7; // Amplified displacement
+    float displacement = (wave1 + wave2 + wave3) * 4.0;
 
     // Displace vertex position
     vec3 displacedPosition = vertexPosition + vec3(0.0, displacement, 0.0);
 
+    // Approximate normals from displacement gradient
+    float eps = 0.02;
+    vec2 uvDx = vertexTexCoord + vec2(eps, 0.0);
+    vec2 uvDz = vertexTexCoord + vec2(0.0, eps);
+
+    float hDx = (texture(perlinNoiseMap, uvDx * 0.8 + vec2(time * 0.03, time * 0.02)).r
+               + texture(perlinNoiseMap, uvDx * 1.5 + vec2(-time * 0.02, time * 0.04)).r * 0.5
+               + texture(perlinNoiseMap, uvDx * 3.0 + vec2(time * 0.05, -time * 0.01)).r * 0.25) * 4.0;
+
+    float hDz = (texture(perlinNoiseMap, uvDz * 0.8 + vec2(time * 0.03, time * 0.02)).r
+               + texture(perlinNoiseMap, uvDz * 1.5 + vec2(-time * 0.02, time * 0.04)).r * 0.5
+               + texture(perlinNoiseMap, uvDz * 3.0 + vec2(time * 0.05, -time * 0.01)).r * 0.25) * 4.0;
+
+    vec3 waveNormal = normalize(vec3(displacement - hDx, eps * 200.0, displacement - hDz));
+
     // Send vertex attributes to fragment shader
-    fragPosition = vec3(matModel*vec4(displacedPosition, 1.0));
+    fragPosition = vec3(matModel * vec4(displacedPosition, 1.0));
     fragTexCoord = vertexTexCoord;
-    fragNormal = normalize(vec3(matNormal*vec4(vertexNormal, 1.0)));
-    height = displacedPosition.y*0.2; // send height to fragment shader for coloring
+    fragNormal = normalize(vec3(matNormal * vec4(waveNormal, 0.0)));
+    height = displacement / 7.0;
 
     // Calculate final vertex position
-    gl_Position = mvp*vec4(displacedPosition , 1.0);
+    gl_Position = mvp * vec4(displacedPosition, 1.0);
 }

@@ -24,6 +24,20 @@ std::vector<Vector3> debugPath;
   float hiddenTimeCounter = 0;
   Image perlinNoiseImage;
   Texture perlinNoiseMap;
+
+  // Sea shader uniform locations
+  int seaTimeLoc = -1;
+  int seaViewPosLoc = -1;
+  int seaLightDirLoc = -1;
+  int seaDeepColorLoc = -1;
+  int seaShallowColorLoc = -1;
+  int seaFoamThresholdLoc = -1;
+
+  // Sea shader tunable parameters
+  float seaLightDir[3] = {0.5f, 0.8f, 0.3f};
+  float seaDeepColor[4] = {0.0f, 0.08f, 0.18f, 0.9f};
+  float seaShallowColor[4] = {0.1f, 0.4f, 0.5f, 0.8f};
+  float seaFoamThreshold = 0.65f;
   float width;
   float height;
   float length;

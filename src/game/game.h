@@ -7,6 +7,7 @@
 #include "../character/character.h"
 #include "../character/controller.h"
 #include "../building/structure_builder.h"
+#include "../building/structure.h"
 #include "../gui/script_editor.h"
 #include "game_object.h"
 #include <memory>
@@ -25,6 +26,7 @@ namespace moiras
     int m_frameCount = 0;
 
     void updateScriptsRecursive(GameObject *obj, float dt);
+    void drawShadowCastersRecursive(GameObject *obj, Material &shadowMat);
 
   public:
     GameObject root;
@@ -38,6 +40,7 @@ namespace moiras
     ~Game();
     void setup();
     void loop(Window window);
+    void renderLoadingFrame(const char *message, float progress);
     void registerObject(unsigned int id, GameObject *object)
     {
       if (object == nullptr)

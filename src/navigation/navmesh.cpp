@@ -143,7 +143,7 @@ TileCoord NavMesh::getTileCoordAt(Vector3 worldPos) const {
 
 // Build legacy - ora usa buildTiled internamente
 bool NavMesh::build(const Mesh &mesh, Matrix transform) {
-  return buildTiled(mesh, transform);
+  return buildTiled(mesh, transform, nullptr);
 }
 
 bool NavMesh::initNavMesh() {
@@ -404,7 +404,8 @@ int NavMesh::rasterizeTileLayers(int tileX, int tileY, const rcConfig &cfg,
   return ntiles;
 }
 
-bool NavMesh::buildTiled(const Mesh &mesh, Matrix transform) {
+bool NavMesh::buildTiled(const Mesh &mesh, Matrix transform,
+                         ProgressCallback progressCallback) {
   if (mesh.vertexCount == 0) {
     TraceLog(LOG_ERROR, "NavMesh: Mesh has no vertices");
     return false;
@@ -559,6 +560,9 @@ bool NavMesh::buildTiled(const Mesh &mesh, Matrix transform) {
     for (int x = 0; x < m_tilesX; x++) {
       if (buildTile(x, y)) {
         builtTiles++;
+      }
+      if (progressCallback) {
+        progressCallback(y * m_tilesX + x + 1, totalTiles);
       }
     }
   }

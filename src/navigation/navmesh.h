@@ -7,6 +7,7 @@
 #include "Recast.h"
 #include <raylib.h>
 #include <string>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -74,10 +75,13 @@ struct TileCacheMeshProcess : public dtTileCacheMeshProcess {
 
 class NavMesh {
 public:
+  using ProgressCallback = std::function<void(int current, int total)>;
+
   NavMesh();
   ~NavMesh();
   bool build(const Mesh &mesh, Matrix transform = MatrixIdentity());
-  bool buildTiled(const Mesh &mesh, Matrix transform = MatrixIdentity());
+  bool buildTiled(const Mesh &mesh, Matrix transform = MatrixIdentity(),
+                  ProgressCallback progressCallback = nullptr);
   bool buildTile(int tileX, int tileY);
   bool removeTile(int tileX, int tileY);
   bool rebuildTile(int tileX, int tileY);

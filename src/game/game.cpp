@@ -11,8 +11,10 @@
 #include "../scripting/ScriptEngine.hpp"
 #include "../scripting/ScriptComponent.hpp"
 #include "imgui.h"
+#include <cstdio>
 #include <memory>
 #include <raylib.h>
+#include <raymath.h>
 #include <rlgl.h>
 namespace moiras
 {
@@ -21,6 +23,12 @@ namespace moiras
 
   void Game::setup()
   {
+    // Create render target and ImGui first so we can show loading progress
+    renderTarget = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
+    rlImGuiSetup(false);
+
+    renderLoadingFrame("Inizializzazione scripting...", 0.0f);
+
     // Initialize the Lua scripting engine
     ScriptEngine::instance().initialize();
     ScriptEngine::instance().setGameRoot(&root);
@@ -30,9 +38,7 @@ namespace moiras
     // Create main camera
     auto mainCamera = std::make_unique<GameCamera>("MainCamera");
 
-    renderTarget = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
-
-    rlImGuiSetup(false);
+    renderLoadingFrame("Caricamento mappa...", 0.10f);
 
     std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.glb");
 
@@ -44,6 +50,8 @@ namespace moiras
     map->seaShaderVertex = ("../assets/shaders/sea_shader.vs");
     map->loadSeaShader();
     map->addSea();
+
+    renderLoadingFrame("Inizializzazione interfaccia...", 0.20f);
 
     auto gui = std::make_unique<Gui>();
     gui->setModelManager(&modelManager);
@@ -68,6 +76,8 @@ namespace moiras
     }
     
     TraceLog(LOG_INFO, "Script Editor initialized (press F12 to open)");
+    renderLoadingFrame("Caricamento audio...", 0.30f);
+
     auto audioManager = std::make_unique<AudioManager>();
     audioManager->setVolume(0.3);
     audioManager->loadMusicFolder("../assets/audio/music");
@@ -84,6 +94,8 @@ namespace moiras
       sidebar->structureBuilder = structureBuilder;
       TraceLog(LOG_INFO, "StructureBuilder linked to Sidebar");
     }
+    renderLoadingFrame("Compilazione shaders...", 0.40f);
+
     nearPlane = 0.5f;
     farPlane = 50000.0f;
     rlSetClipPlanes(nearPlane, farPlane);
@@ -129,7 +141,14 @@ namespace moiras
         mapPtr->model.materials[i].shader = lightmanager.getShader();
       }
 
-      mapPtr->buildNavMesh();
+      renderLoadingFrame("Costruzione NavMesh...", 0.50f);
+      mapPtr->buildNavMesh([this](int current, int total) {
+        float navProgress = (float)current / (float)total;
+        float overallProgress = 0.50f + navProgress * 0.40f;
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Costruzione NavMesh... (tile %d/%d)", current, total);
+        renderLoadingFrame(msg, overallProgress);
+      });
       TraceLog(LOG_INFO, "Shader assigned, ID: %d",
                mapPtr->model.materials[0].shader.id);
     }
@@ -139,6 +158,9 @@ namespace moiras
 
     Character::setSharedShader(celShader);
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
+
+    renderLoadingFrame("Caricamento personaggio...", 0.92f);
+
     auto player = std::make_unique<Character>();
     player->name = "Player";
     player->tag = "player";
@@ -173,7 +195,47 @@ namespace moiras
     // Imposta lo shader condiviso per le strutture
     Structure::setSharedShader(celShader);
 
+    // Setup shadow mapping
+    renderLoadingFrame("Inizializzazione ombre...", 0.96f);
+    lightmanager.registerShadowShader(celShader);
+    lightmanager.setupShadowMap("../assets/shaders/shadow_depth.vs",
+                                 "../assets/shaders/shadow_depth.fs");
+
+    renderLoadingFrame("Pronto!", 1.0f);
+
     TraceLog(LOG_INFO, "SCRIPTING: Lua scripting system ready");
+  }
+
+  void Game::renderLoadingFrame(const char *message, float progress)
+  {
+    BeginDrawing();
+    ClearBackground({30, 30, 40, 255});
+
+    rlImGuiBegin();
+
+    ImGuiIO &io = ImGui::GetIO();
+    float windowWidth = 420.0f;
+    float windowHeight = 100.0f;
+    ImGui::SetNextWindowPos(
+        ImVec2((io.DisplaySize.x - windowWidth) * 0.5f,
+               (io.DisplaySize.y - windowHeight) * 0.5f),
+        ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(windowWidth, windowHeight), ImGuiCond_Always);
+
+    ImGui::Begin("##Loading", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoCollapse);
+
+    ImGui::Text("%s", message);
+    ImGui::Spacing();
+    ImGui::ProgressBar(progress, ImVec2(-1, 0));
+    ImGui::Text("%d%%", (int)(progress * 100.0f));
+
+    ImGui::End();
+    rlImGuiEnd();
+
+    EndDrawing();
   }
 
   void Game::updateScriptsRecursive(GameObject *obj, float dt)
@@ -268,6 +330,47 @@ namespace moiras
       lightmanager.updateCameraPosition(camera->rcamera.position);
       lightmanager.updateAllLights();
 
+      // Update sea shader camera position
+      if (map && map->seaShaderLoaded.id > 0 && map->seaViewPosLoc >= 0) {
+        float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
+        SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
+      }
+
+      // Always push shadow enabled/disabled state to shaders so toggling works
+      lightmanager.updateShadowUniforms();
+
+      // Shadow pass: render depth from light's perspective (only when enabled)
+      if (lightmanager.areShadowsEnabled()) {
+        lightmanager.shadowFrameCounter++;
+        bool shouldUpdateShadow = (lightmanager.shadowFrameCounter % lightmanager.shadowUpdateInterval) == 0;
+
+        if (shouldUpdateShadow) {
+          lightmanager.updateLightSpaceMatrix(camera->rcamera.position);
+
+          lightmanager.beginShadowPass();
+
+          // Draw shadow casters with depth-only shader
+          Material shadowMat = lightmanager.getShadowMaterial();
+
+          // Map terrain
+          if (map && map->model.meshCount > 0) {
+            Matrix mapTransform = MatrixMultiply(map->model.transform,
+                MatrixTranslate(map->position.x, map->position.y, map->position.z));
+            for (int i = 0; i < map->model.meshCount; i++) {
+              DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
+            }
+          }
+
+          // Characters, structures, and other shadow casters
+          drawShadowCastersRecursive(&root, shadowMat);
+
+          lightmanager.endShadowPass();
+        }
+
+        // Bind shadow map texture for the main render pass (every frame)
+        lightmanager.bindShadowMap();
+      }
+
       // Render scene to texture
       BeginTextureMode(renderTarget);
       ClearBackground(DARKBLUE);
@@ -355,9 +458,67 @@ namespace moiras
     }
   }
 
+  void Game::drawShadowCastersRecursive(GameObject *obj, Material &shadowMat)
+  {
+    if (!obj) return;
+
+    // Characters
+    if (auto *character = dynamic_cast<Character *>(obj))
+    {
+      if (character->isVisible && character->hasModel())
+      {
+        Quaternion q = QuaternionFromEuler(
+            character->eulerRot.x * DEG2RAD,
+            character->eulerRot.y * DEG2RAD,
+            character->eulerRot.z * DEG2RAD);
+        Vector3 axis;
+        float angle;
+        QuaternionToAxisAngle(q, &axis, &angle);
+        Matrix matScale = MatrixScale(character->scale, character->scale, character->scale);
+        Matrix matRotation = MatrixRotate(axis, angle);
+        Matrix matTranslation = MatrixTranslate(
+            character->position.x, character->position.y, character->position.z);
+        Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
+
+        for (int i = 0; i < character->modelInstance.meshCount(); i++)
+        {
+          DrawMesh(character->modelInstance.meshes()[i], shadowMat, transform);
+        }
+      }
+    }
+
+    // Structures
+    if (auto *structure = dynamic_cast<Structure *>(obj))
+    {
+      if (structure->isVisible && structure->hasModel())
+      {
+        Matrix matScale = MatrixScale(structure->scale, structure->scale, structure->scale);
+        Matrix matRotation = QuaternionToMatrix(structure->rotation);
+        Matrix matTranslation = MatrixTranslate(
+            structure->position.x, structure->position.y, structure->position.z);
+        Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
+
+        for (int i = 0; i < structure->modelInstance.meshCount(); i++)
+        {
+          DrawMesh(structure->modelInstance.meshes()[i], shadowMat, transform);
+        }
+      }
+    }
+
+    // Recurse into children
+    for (auto &child : obj->children)
+    {
+      if (child)
+      {
+        drawShadowCastersRecursive(child.get(), shadowMat);
+      }
+    }
+  }
+
   Game::~Game()
   {
     ScriptEngine::instance().shutdown();
+    lightmanager.unload();
     UnloadShader(outlineShader);
     UnloadRenderTexture(renderTarget);
     rlImGuiShutdown();

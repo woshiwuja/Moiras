@@ -45,6 +45,9 @@ void LightManager::loadShader(const std::string &vsPath,
     int numLights = MAX_LIGHTS;
     SetShaderValue(shader, GetShaderLocation(shader, "numOfLights"), &numLights, SHADER_UNIFORM_INT);
 
+    // Register PBR shader for shadow uniforms (cached locations)
+    registerShadowShader(shader);
+
     // Apply initial PBR values
     updatePBRUniforms();
     setAmbient(ambientColor, ambientIntensity);
@@ -53,10 +56,197 @@ void LightManager::loadShader(const std::string &vsPath,
     tilingLoc = GetShaderLocation(shader, "tiling");
     offsetLoc = GetShaderLocation(shader, "offset");
     useTilingLoc = GetShaderLocation(shader, "useTiling");
-    
+
     // Default: no tiling
     int noTiling = 0;
     SetShaderValue(shader, useTilingLoc, &noTiling, SHADER_UNIFORM_INT);
+}
+
+void LightManager::setupShadowMap(const std::string &depthVsPath,
+                                   const std::string &depthFsPath) {
+    // Load depth shader
+    shadowDepthShader = LoadShader(depthVsPath.c_str(), depthFsPath.c_str());
+    if (shadowDepthShader.id == 0) {
+        TraceLog(LOG_ERROR, "LightManager: Failed to load shadow depth shader!");
+        return;
+    }
+
+    // Create shadow material
+    shadowMaterial = LoadMaterialDefault();
+    shadowMaterial.shader = shadowDepthShader;
+
+    // Create shadow map FBO
+    shadowMapFBO = rlLoadFramebuffer();
+    if (shadowMapFBO == 0) {
+        TraceLog(LOG_ERROR, "LightManager: Failed to create shadow FBO!");
+        return;
+    }
+
+    // Create depth texture (not renderbuffer, so it's sampleable)
+    rlEnableFramebuffer(shadowMapFBO);
+    shadowMapDepthTex = rlLoadTextureDepth(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, false);
+    rlFramebufferAttach(shadowMapFBO, shadowMapDepthTex, RL_ATTACHMENT_DEPTH,
+                        RL_ATTACHMENT_TEXTURE2D, 0);
+
+    if (!rlFramebufferComplete(shadowMapFBO)) {
+        TraceLog(LOG_ERROR, "LightManager: Shadow FBO is not complete!");
+        rlUnloadFramebuffer(shadowMapFBO);
+        shadowMapFBO = 0;
+        return;
+    }
+    rlDisableFramebuffer();
+
+    // Set depth texture filtering
+    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MIN_FILTER, RL_TEXTURE_FILTER_NEAREST);
+    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MAG_FILTER, RL_TEXTURE_FILTER_NEAREST);
+    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_WRAP_S, RL_TEXTURE_WRAP_CLAMP);
+    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_WRAP_T, RL_TEXTURE_WRAP_CLAMP);
+
+    shadowMapReady = true;
+
+    // Bind shadow map sampler to all already-registered shadow shaders
+    for (int i = 0; i < shadowShaderCount; i++) {
+        if (shadowShaders[i].shader.id > 0 && shadowShaders[i].shadowMapLoc >= 0) {
+            rlEnableShader(shadowShaders[i].shader.id);
+            rlActiveTextureSlot(SHADOW_TEXTURE_SLOT);
+            rlEnableTexture(shadowMapDepthTex);
+            rlSetUniformSampler(shadowShaders[i].shadowMapLoc, SHADOW_TEXTURE_SLOT);
+            rlActiveTextureSlot(0);
+        }
+    }
+
+    // Push initial shadow state to shaders (ensures shadowsEnabled=0 when defaulting off)
+    updateShadowUniforms();
+
+    TraceLog(LOG_INFO, "LightManager: Shadow map initialized (%dx%d, FBO: %u, Depth: %u)",
+             SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, shadowMapFBO, shadowMapDepthTex);
+}
+
+void LightManager::updateLightSpaceMatrix(Vector3 cameraPos) {
+    if (!shadowMapReady) return;
+
+    // Find the first enabled directional light
+    Light *dirLight = nullptr;
+    for (int i = 0; i < MAX_LIGHTS; i++) {
+        if (lights[i] && lights[i]->enabled &&
+            lights[i]->getType() == LightType::DIRECTIONAL) {
+            dirLight = lights[i];
+            break;
+        }
+    }
+
+    if (!dirLight) return;
+
+    // Compute light direction (from light position toward target)
+    Vector3 lightDir = Vector3Normalize(Vector3Subtract(dirLight->target, dirLight->position));
+
+    // Position the shadow camera behind the scene, centered on the player area
+    Vector3 shadowCenter = cameraPos;
+    shadowCenter.y = 0.0f; // Focus at ground level
+    Vector3 lightPos = Vector3Subtract(shadowCenter, Vector3Scale(lightDir, shadowFar * 0.5f));
+
+    // Handle edge case: light direction parallel to up vector
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+    if (fabsf(Vector3DotProduct(lightDir, up)) > 0.99f) {
+        up = {0.0f, 0.0f, 1.0f};
+    }
+
+    Matrix lightView = MatrixLookAt(lightPos, shadowCenter, up);
+    Matrix lightProj = MatrixOrtho(-shadowOrthoSize, shadowOrthoSize,
+                                    -shadowOrthoSize, shadowOrthoSize,
+                                    shadowNear, shadowFar);
+
+    lightSpaceMatrix = MatrixMultiply(lightView, lightProj);
+}
+
+void LightManager::beginShadowPass() {
+    if (!shadowMapReady || !shadowsEnabled) return;
+
+    // Save current matrices
+    savedProjection = rlGetMatrixProjection();
+    savedModelview = rlGetMatrixModelview();
+
+    // Enable shadow FBO
+    rlEnableFramebuffer(shadowMapFBO);
+    rlViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+    rlClearColor(255, 255, 255, 255);
+    rlClearScreenBuffers();
+
+    // Use pre-computed lightSpaceMatrix from updateLightSpaceMatrix()
+    rlSetMatrixModelview(lightSpaceMatrix);
+    rlSetMatrixProjection(MatrixIdentity());
+
+    rlEnableDepthTest();
+    rlEnableDepthMask();
+}
+
+void LightManager::endShadowPass() {
+    if (!shadowMapReady || !shadowsEnabled) return;
+
+    rlDisableFramebuffer();
+
+    // Restore viewport
+    rlViewport(0, 0, GetScreenWidth(), GetScreenHeight());
+
+    // Restore matrices
+    rlSetMatrixProjection(savedProjection);
+    rlSetMatrixModelview(savedModelview);
+}
+
+void LightManager::bindShadowMap() {
+    if (!shadowMapReady) return;
+
+    // Bind shadow depth texture to the designated slot
+    rlActiveTextureSlot(SHADOW_TEXTURE_SLOT);
+    rlEnableTexture(shadowMapDepthTex);
+    rlActiveTextureSlot(0);
+}
+
+void LightManager::registerShadowShader(Shader targetShader) {
+    if (targetShader.id == 0 || shadowShaderCount >= MAX_SHADOW_SHADERS) return;
+
+    // Check if already registered
+    for (int i = 0; i < shadowShaderCount; i++) {
+        if (shadowShaders[i].shader.id == targetShader.id) return;
+    }
+
+    ShadowShaderLocs &locs = shadowShaders[shadowShaderCount];
+    locs.shader = targetShader;
+    locs.shadowEnabledLoc = GetShaderLocation(targetShader, "shadowsEnabled");
+    locs.lightSpaceMatrixLoc = GetShaderLocation(targetShader, "lightSpaceMatrix");
+    locs.shadowMapLoc = GetShaderLocation(targetShader, "shadowMap");
+    locs.shadowBiasLoc = GetShaderLocation(targetShader, "shadowBias");
+    shadowShaderCount++;
+
+    // Bind shadow map sampler once (texture unit doesn't change)
+    if (shadowMapReady && locs.shadowMapLoc >= 0) {
+        rlEnableShader(targetShader.id);
+        rlActiveTextureSlot(SHADOW_TEXTURE_SLOT);
+        rlEnableTexture(shadowMapDepthTex);
+        rlSetUniformSampler(locs.shadowMapLoc, SHADOW_TEXTURE_SLOT);
+        rlActiveTextureSlot(0);
+    }
+
+    TraceLog(LOG_INFO, "LightManager: Registered shadow shader ID %d (slot %d)",
+             targetShader.id, shadowShaderCount - 1);
+}
+
+void LightManager::updateShadowUniforms() {
+    if (!shadowMapReady) return;
+
+    int enabled = shadowsEnabled ? 1 : 0;
+
+    for (int i = 0; i < shadowShaderCount; i++) {
+        ShadowShaderLocs &locs = shadowShaders[i];
+        if (locs.shader.id == 0) continue;
+
+        if (locs.lightSpaceMatrixLoc >= 0)
+            SetShaderValueMatrix(locs.shader, locs.lightSpaceMatrixLoc, lightSpaceMatrix);
+        if (locs.shadowEnabledLoc >= 0)
+            SetShaderValue(locs.shader, locs.shadowEnabledLoc, &enabled, SHADER_UNIFORM_INT);
+        if (locs.shadowBiasLoc >= 0)
+            SetShaderValue(locs.shader, locs.shadowBiasLoc, &shadowBias, SHADER_UNIFORM_FLOAT);
+    }
 }
 
 void LightManager::updatePBRUniforms() {
@@ -69,7 +259,7 @@ void LightManager::updatePBRUniforms() {
     SetShaderValue(shader, emissiveColorLoc, emissiveColor, SHADER_UNIFORM_VEC4);
     SetShaderValue(shader, tilingLoc, tiling, SHADER_UNIFORM_VEC2);
     SetShaderValue(shader, offsetLoc, offset, SHADER_UNIFORM_VEC2);
-    
+
     int useAlbedo = useTexAlbedo ? 1 : 0;
     int useNormal = useTexNormal ? 1 : 0;
     int useMRA = useTexMRA ? 1 : 0;
@@ -80,7 +270,7 @@ void LightManager::updatePBRUniforms() {
     SetShaderValue(shader, useTexEmissiveLoc, &useEmissive, SHADER_UNIFORM_INT);
     int tilingEnabled = useTiling ? 1 : 0;
     SetShaderValue(shader, useTilingLoc, &tilingEnabled, SHADER_UNIFORM_INT);
-    
+
     if (useTiling) {
         SetShaderValue(shader, tilingLoc, tiling, SHADER_UNIFORM_VEC2);
         SetShaderValue(shader, offsetLoc, offset, SHADER_UNIFORM_VEC2);
@@ -114,7 +304,7 @@ void LightManager::removeLight(int index) {
 void LightManager::updateAllLights() {
     // Update PBR uniforms every frame (in case they changed via GUI)
     updatePBRUniforms();
-    
+
     for (int i = 0; i < MAX_LIGHTS; i++) {
         if (lights[i] != nullptr) {
             lights[i]->updateShader(shader);
@@ -149,39 +339,54 @@ void LightManager::gui() {
             setAmbient(ambientColor, ambientIntensity);
         }
     }
-    
+
     // PBR Material settings
     if (ImGui::CollapsingHeader("PBR Material", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::SliderFloat("Metallic", &metallicValue, 0.0f, 1.0f);
         ImGui::SliderFloat("Roughness", &roughnessValue, 0.0f, 1.0f);
         ImGui::SliderFloat("AO", &aoValue, 0.0f, 1.0f);
         ImGui::SliderFloat("Normal Strength", &normalValue, 0.0f, 2.0f);
-        
+
         ImGui::Spacing();
         ImGui::ColorEdit4("Albedo Color", albedoColor);
-        
+
         ImGui::Spacing();
         ImGui::ColorEdit4("Emissive Color", emissiveColor);
         ImGui::SliderFloat("Emissive Power", &emissivePower, 0.0f, 10.0f);
     }
-    
+
     // Texture settings
     if (ImGui::CollapsingHeader("Textures")) {
         ImGui::Checkbox("Use Albedo Map", &useTexAlbedo);
         ImGui::Checkbox("Use Normal Map", &useTexNormal);
         ImGui::Checkbox("Use MRA Map", &useTexMRA);
         ImGui::Checkbox("Use Emissive Map", &useTexEmissive);
-        
+
         ImGui::Spacing();
         ImGui::DragFloat2("Tiling", tiling, 0.1f, 0.1f, 10.0f);
         ImGui::DragFloat2("Offset", offset, 0.01f, -1.0f, 1.0f);
     }
-    
+
+    // Shadow settings
+    if (ImGui::CollapsingHeader("Shadows")) {
+        ImGui::Checkbox("Enable Shadows", &shadowsEnabled);
+        ImGui::SliderInt("Update Interval", &shadowUpdateInterval, 1, 6);
+        ImGui::SliderFloat("Shadow Ortho Size", &shadowOrthoSize, 50.0f, 500.0f);
+        ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0001f, 0.05f, "%.4f");
+        ImGui::SliderFloat("Shadow Near", &shadowNear, 0.1f, 10.0f);
+        ImGui::SliderFloat("Shadow Far", &shadowFar, 100.0f, 2000.0f);
+        if (shadowMapReady) {
+            ImGui::TextColored(ImVec4(0, 1, 0, 1), "Shadow Map: %dx%d", SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+        } else {
+            ImGui::TextColored(ImVec4(1, 0, 0, 1), "Shadow Map: Not initialized");
+        }
+    }
+
     // Lights
     if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text("Active Lights: %d / %d", lightCount, MAX_LIGHTS);
         ImGui::Separator();
-        
+
         for (int i = 0; i < MAX_LIGHTS; i++) {
             if (lights[i] != nullptr) {
                 ImGui::PushID(i);
@@ -195,11 +400,31 @@ void LightManager::gui() {
 void LightManager::unload() {
     UnloadShader(shader);
     shader = {0};
+
+    if (shadowDepthShader.id > 0) {
+        UnloadShader(shadowDepthShader);
+        shadowDepthShader = {0};
+    }
+    if (shadowMaterial.shader.id > 0) {
+        // Don't unload default material maps, just clear the reference
+        shadowMaterial = {0};
+    }
+    if (shadowMapFBO > 0) {
+        rlUnloadFramebuffer(shadowMapFBO);
+        shadowMapFBO = 0;
+    }
+    if (shadowMapDepthTex > 0) {
+        rlUnloadTexture(shadowMapDepthTex);
+        shadowMapDepthTex = 0;
+    }
+    shadowMapReady = false;
+
     for (int i = 0; i < MAX_LIGHTS; i++) {
         lights[i] = nullptr;
     }
     lightCount = 0;
 }
+
 void LightManager::applyMaterial(const Material& material) {
     // Albedo color dal materiale
     Color albedo = material.maps[MATERIAL_MAP_ALBEDO].color;
@@ -210,27 +435,27 @@ void LightManager::applyMaterial(const Material& material) {
         albedo.a / 255.0f
     };
     SetShaderValue(shader, albedoColorLoc, albedoCol, SHADER_UNIFORM_VEC4);
-    
+
     // Metallic e roughness dai valori del materiale
     float metallic = material.maps[MATERIAL_MAP_METALNESS].value;
     float roughness = material.maps[MATERIAL_MAP_ROUGHNESS].value;
     float ao = material.maps[MATERIAL_MAP_OCCLUSION].value;
-    
+
     SetShaderValue(shader, metallicLoc, &metallic, SHADER_UNIFORM_FLOAT);
     SetShaderValue(shader, roughnessLoc, &roughness, SHADER_UNIFORM_FLOAT);
     SetShaderValue(shader, aoLoc, &ao, SHADER_UNIFORM_FLOAT);
-    
+
     // Controlla se le texture sono presenti
     int hasAlbedo = (material.maps[MATERIAL_MAP_ALBEDO].texture.id > 0) ? 1 : 0;
     int hasNormal = (material.maps[MATERIAL_MAP_NORMAL].texture.id > 0) ? 1 : 0;
     int hasMRA = (material.maps[MATERIAL_MAP_METALNESS].texture.id > 0) ? 1 : 0;
     int hasEmissive = (material.maps[MATERIAL_MAP_EMISSION].texture.id > 0) ? 1 : 0;
-    
+
     SetShaderValue(shader, useTexAlbedoLoc, &hasAlbedo, SHADER_UNIFORM_INT);
     SetShaderValue(shader, useTexNormalLoc, &hasNormal, SHADER_UNIFORM_INT);
     SetShaderValue(shader, useTexMRALoc, &hasMRA, SHADER_UNIFORM_INT);
     SetShaderValue(shader, useTexEmissiveLoc, &hasEmissive, SHADER_UNIFORM_INT);
-    
+
     // Emissive
     if (hasEmissive) {
         Color emissive = material.maps[MATERIAL_MAP_EMISSION].color;

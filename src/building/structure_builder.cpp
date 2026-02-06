@@ -2,6 +2,8 @@
 #include "../input/input_manager.h"
 #include "../time/time_manager.h"
 #include "../map/map.h"
+#include "../../rlImGui/rlImGui.h"
+#include "imgui.h"
 #include <algorithm>
 #include <raymath.h>
 #include <cfloat>
@@ -45,10 +47,7 @@ void StructureBuilder::setModelManager(ModelManager *modelManager) {
 
 void StructureBuilder::enterBuildingMode() {
   if (m_selectedAsset >= 0 && m_selectedAsset < (int)m_assetFiles.size()) {
-    m_buildingMode = true;
-    loadPreviewModel("../assets/" + m_assetFiles[m_selectedAsset]);
-    TraceLog(LOG_INFO, "Entered building mode with asset: %s",
-             m_assetFiles[m_selectedAsset].c_str());
+    m_pendingEnterBuild = true;
   }
 }
 
@@ -84,6 +83,18 @@ void StructureBuilder::rotatePreview(float deltaY) {
 
 void StructureBuilder::update() {
   GameObject::update();
+
+  // Process deferred enter build mode (triggered from GUI)
+  if (m_pendingEnterBuild) {
+    m_pendingEnterBuild = false;
+    if (m_selectedAsset >= 0 && m_selectedAsset < (int)m_assetFiles.size()) {
+      renderBuildingLoadScreen("Caricamento modello...");
+      m_buildingMode = true;
+      loadPreviewModel("../assets/" + m_assetFiles[m_selectedAsset]);
+      TraceLog(LOG_INFO, "Entered building mode with asset: %s",
+               m_assetFiles[m_selectedAsset].c_str());
+    }
+  }
 
   // Aggiorna preview texture se cambiata la selezione
   if (m_selectedAsset != m_lastSelectedAsset && m_selectedAsset >= 0) {
@@ -124,6 +135,7 @@ void StructureBuilder::update() {
   // Click sinistro per piazzare
   if (input.isActionJustPressed(InputAction::BUILDING_PLACE)) {
     if (m_isValidPlacement) {
+      renderBuildingLoadScreen("Piazzamento struttura...");
       placeStructure();
     }
   }
@@ -473,6 +485,7 @@ void StructureBuilder::loadOrGeneratePreviewTexture(
   }
 
   // Genera una nuova preview
+  renderBuildingLoadScreen("Generazione anteprima...");
   generatePreviewTexture(assetFilename, previewPath);
 }
 
@@ -528,6 +541,48 @@ void StructureBuilder::generatePreviewTexture(const std::string &assetFilename,
 
   // Scarica il modello
   UnloadModel(model);
+}
+
+void StructureBuilder::renderBuildingLoadScreen(const char *message) {
+  BeginDrawing();
+
+  rlImGuiBegin();
+
+  // Overlay scuro semitrasparente su tutto lo schermo
+  ImGuiIO &io = ImGui::GetIO();
+  ImGui::SetNextWindowPos(ImVec2(0, 0));
+  ImGui::SetNextWindowSize(io.DisplaySize);
+  ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.4f));
+  ImGui::Begin("##BuildOverlay", nullptr,
+               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoInputs |
+                   ImGuiWindowFlags_NoBringToFrontOnFocus);
+  ImGui::End();
+  ImGui::PopStyleColor();
+
+  // Finestra di caricamento centrata
+  float windowWidth = 350.0f;
+  float windowHeight = 80.0f;
+  ImGui::SetNextWindowPos(
+      ImVec2((io.DisplaySize.x - windowWidth) * 0.5f,
+             (io.DisplaySize.y - windowHeight) * 0.5f),
+      ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(windowWidth, windowHeight), ImGuiCond_Always);
+
+  ImGui::Begin("##BuildLoading", nullptr,
+               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                   ImGuiWindowFlags_NoCollapse);
+
+  ImGui::Text("%s", message);
+  ImGui::Spacing();
+  ImGui::ProgressBar(-1.0f * (float)GetTime(), ImVec2(-1, 0));
+
+  ImGui::End();
+  rlImGuiEnd();
+
+  EndDrawing();
 }
 
 } // namespace moiras

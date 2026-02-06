@@ -72,9 +72,13 @@ Map &Map::operator=(Map &&other) noexcept {
 
 void Map::draw() {
   DrawModel(model, position, 1.0f, WHITE);
-  BeginShaderMode(seaShaderLoaded);
-  DrawModel(seaModel, position, 1.0f, WHITE);
-  EndShaderMode();
+  if (seaShaderLoaded.id > 0 && seaModel.meshCount > 0) {
+    rlEnableColorBlend();
+    rlSetBlendMode(RL_BLEND_ALPHA);
+    BeginShaderMode(seaShaderLoaded);
+    DrawModel(seaModel, position, 1.0f, WHITE);
+    EndShaderMode();
+  }
   if (showNavMeshDebug && navMeshBuilt) {
     navMesh.drawDebug();
   };
@@ -113,23 +117,51 @@ std::unique_ptr<Map> mapFromModel(const std::string &filename) {
 void Map::loadSeaShader() {
   seaShaderLoaded =
       LoadShader(seaShaderVertex.c_str(), seaShaderFragment.c_str());
-  perlinNoiseImage = GenImagePerlinNoise(500, 500, 1, 1, 1.0f);
+
+  if (seaShaderLoaded.id == 0) {
+    TraceLog(LOG_ERROR, "Sea shader failed to load!");
+    return;
+  }
+
+  // Generate and bind perlin noise texture to slot 1
+  perlinNoiseImage = GenImagePerlinNoise(512, 512, 0, 0, 3.0f);
   perlinNoiseMap = LoadTextureFromImage(perlinNoiseImage);
+  SetTextureWrap(perlinNoiseMap, TEXTURE_WRAP_REPEAT);
+  SetTextureFilter(perlinNoiseMap, TEXTURE_FILTER_BILINEAR);
   UnloadImage(perlinNoiseImage);
+
   int perlinNoiseMapLoc = GetShaderLocation(seaShaderLoaded, "perlinNoiseMap");
   rlEnableShader(seaShaderLoaded.id);
   rlActiveTextureSlot(1);
   rlEnableTexture(perlinNoiseMap.id);
   rlSetUniformSampler(perlinNoiseMapLoc, 1);
+  rlActiveTextureSlot(0);
+
+  // Cache uniform locations
+  seaTimeLoc = GetShaderLocation(seaShaderLoaded, "time");
+  seaViewPosLoc = GetShaderLocation(seaShaderLoaded, "viewPos");
+  seaLightDirLoc = GetShaderLocation(seaShaderLoaded, "lightDir");
+  seaDeepColorLoc = GetShaderLocation(seaShaderLoaded, "waterDeepColor");
+  seaShallowColorLoc = GetShaderLocation(seaShaderLoaded, "waterShallowColor");
+  seaFoamThresholdLoc = GetShaderLocation(seaShaderLoaded, "foamThreshold");
+
+  // Set initial uniform values
+  SetShaderValue(seaShaderLoaded, seaLightDirLoc, seaLightDir, SHADER_UNIFORM_VEC3);
+  SetShaderValue(seaShaderLoaded, seaDeepColorLoc, seaDeepColor, SHADER_UNIFORM_VEC4);
+  SetShaderValue(seaShaderLoaded, seaShallowColorLoc, seaShallowColor, SHADER_UNIFORM_VEC4);
+  SetShaderValue(seaShaderLoaded, seaFoamThresholdLoc, &seaFoamThreshold, SHADER_UNIFORM_FLOAT);
+
+  TraceLog(LOG_INFO, "Sea shader loaded (id: %d)", seaShaderLoaded.id);
 }
 
 void Map::update() {
   hiddenTimeCounter += TimeManager::getInstance().getGameDeltaTime();
-  SetShaderValue(seaShaderLoaded, GetShaderLocation(seaShaderLoaded, "time"),
-                 &hiddenTimeCounter, SHADER_UNIFORM_FLOAT);
+  if (seaShaderLoaded.id > 0) {
+    SetShaderValue(seaShaderLoaded, seaTimeLoc, &hiddenTimeCounter, SHADER_UNIFORM_FLOAT);
+  }
 };
 
-void Map::buildNavMesh() {
+void Map::buildNavMesh(NavMesh::ProgressCallback progressCallback) {
     if (model.meshCount == 0) return;
 
     // Percorso file cache
@@ -206,7 +238,7 @@ void Map::buildNavMesh() {
     }
 
     // Costruisci la navmesh tiled
-    navMeshBuilt = navMesh.buildTiled(model.meshes[0], model.transform);
+    navMeshBuilt = navMesh.buildTiled(model.meshes[0], model.transform, progressCallback);
 
     if (navMeshBuilt) {
         TraceLog(LOG_INFO, "NavMesh: Tiled build SUCCESS - %d tiles, %d total polygons",
@@ -273,6 +305,21 @@ void Map::gui() {
             buildNavMesh();
             double elapsed = GetTime() - startTime;
             TraceLog(LOG_INFO, "NavMesh rebuilt in %.2f seconds", elapsed);
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Sea Shader")) {
+        bool changed = false;
+        changed |= ImGui::ColorEdit4("Deep Color", seaDeepColor);
+        changed |= ImGui::ColorEdit4("Shallow Color", seaShallowColor);
+        changed |= ImGui::SliderFloat3("Light Direction", seaLightDir, -1.0f, 1.0f);
+        changed |= ImGui::SliderFloat("Foam Threshold", &seaFoamThreshold, 0.0f, 1.0f);
+
+        if (changed && seaShaderLoaded.id > 0) {
+            SetShaderValue(seaShaderLoaded, seaDeepColorLoc, seaDeepColor, SHADER_UNIFORM_VEC4);
+            SetShaderValue(seaShaderLoaded, seaShallowColorLoc, seaShallowColor, SHADER_UNIFORM_VEC4);
+            SetShaderValue(seaShaderLoaded, seaLightDirLoc, seaLightDir, SHADER_UNIFORM_VEC3);
+            SetShaderValue(seaShaderLoaded, seaFoamThresholdLoc, &seaFoamThreshold, SHADER_UNIFORM_FLOAT);
         }
     }
 

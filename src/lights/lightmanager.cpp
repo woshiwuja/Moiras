@@ -492,9 +492,9 @@ void LightManager::gui() {
         ImGui::Checkbox("Enable Shadows", &shadowsEnabled);
         ImGui::SliderInt("Update Interval", &shadowUpdateInterval, 1, 6);
         ImGui::SliderFloat("Cascade Lambda", &cascadeLambda, 0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0001f, 0.05f, "%.4f");
+        ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0001f, 0.1f, "%.4f");
         ImGui::SliderFloat("Normal Offset", &shadowNormalOffset, 0.0f, 2.0f, "%.2f");
-        ImGui::SliderFloat("Shadow Far", &shadowFar, 100.0f, 2000.0f);
+        ImGui::SliderFloat("Shadow Far", &shadowFar, 100.0f, 20000.0f);
         if (shadowMapReady) {
             ImGui::TextColored(ImVec4(0, 1, 0, 1), "Shadow Atlas: %dx%d (%d cascades)",
                               SHADOW_ATLAS_SIZE, SHADOW_ATLAS_SIZE, NUM_CASCADES);

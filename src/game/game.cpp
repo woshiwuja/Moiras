@@ -40,7 +40,7 @@ namespace moiras
 
     renderLoadingFrame("Caricamento mappa...", 0.10f);
 
-    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.glb");
+    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map2.glb");
 
     SetTextureFilter(map->model.materials[0].maps->texture,
                      TEXTURE_FILTER_ANISOTROPIC_8X);
@@ -152,21 +152,17 @@ namespace moiras
       TraceLog(LOG_INFO, "Shader assigned, ID: %d",
                mapPtr->model.materials[0].shader.id);
     }
-
     lightmanager.addLight(light1Ptr);
     lightmanager.addLight(light2Ptr);
-
     Character::setSharedShader(celShader);
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
-
     renderLoadingFrame("Caricamento personaggio...", 0.92f);
-
     auto player = std::make_unique<Character>();
     player->name = "Player";
     player->tag = "player";
     player->loadModel(modelManager, player->model_path);
-    player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
-    player->scale = .05f;
+    player->position = {0.0f, 10.0f, 0.0f};
+    player->scale = 0.05f;
     registerObject(player->id, player.get());
     auto playerPtr = getObjectByID<Character>(player->id);
     root.addChild(std::move(player));
@@ -176,8 +172,6 @@ namespace moiras
       playerController->setMovementSpeed(12.0f);
       TraceLog(LOG_INFO, "Player controller created and initialized");
     }
-
-    // Configura lo StructureBuilder con le dipendenze
     auto cameraPtr = root.getChildOfType<GameCamera>();
     if (structureBuilder && mapPtr)
     {
@@ -192,20 +186,14 @@ namespace moiras
                "StructureBuilder configured with Map, NavMesh and ModelManager");
     }
 
-    // Imposta lo shader condiviso per le strutture
     Structure::setSharedShader(celShader);
-
-    // Setup shadow mapping
     renderLoadingFrame("Inizializzazione ombre...", 0.96f);
     lightmanager.registerShadowShader(celShader);
     lightmanager.setupShadowMap("../assets/shaders/shadow_depth.vs",
                                  "../assets/shaders/shadow_depth.fs");
-
     renderLoadingFrame("Pronto!", 1.0f);
-
     TraceLog(LOG_INFO, "SCRIPTING: Lua scripting system ready");
   }
-
   void Game::renderLoadingFrame(const char *message, float progress)
   {
     BeginDrawing();

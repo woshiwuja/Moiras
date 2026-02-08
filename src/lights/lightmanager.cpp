@@ -1,5 +1,7 @@
 #include "lightmanager.h"
 #include "imgui.h"
+#include <cmath>
+#include <cstdio>
 #include <raylib.h>
 
 namespace moiras {
@@ -75,16 +77,16 @@ void LightManager::setupShadowMap(const std::string &depthVsPath,
     shadowMaterial = LoadMaterialDefault();
     shadowMaterial.shader = shadowDepthShader;
 
-    // Create shadow map FBO
+    // Create shadow atlas FBO (SHADOW_ATLAS_SIZE x SHADOW_ATLAS_SIZE)
     shadowMapFBO = rlLoadFramebuffer();
     if (shadowMapFBO == 0) {
         TraceLog(LOG_ERROR, "LightManager: Failed to create shadow FBO!");
         return;
     }
 
-    // Create depth texture (not renderbuffer, so it's sampleable)
+    // Create depth texture atlas
     rlEnableFramebuffer(shadowMapFBO);
-    shadowMapDepthTex = rlLoadTextureDepth(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, false);
+    shadowMapDepthTex = rlLoadTextureDepth(SHADOW_ATLAS_SIZE, SHADOW_ATLAS_SIZE, false);
     rlFramebufferAttach(shadowMapFBO, shadowMapDepthTex, RL_ATTACHMENT_DEPTH,
                         RL_ATTACHMENT_TEXTURE2D, 0);
 
@@ -96,9 +98,9 @@ void LightManager::setupShadowMap(const std::string &depthVsPath,
     }
     rlDisableFramebuffer();
 
-    // Set depth texture filtering
-    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MIN_FILTER, RL_TEXTURE_FILTER_NEAREST);
-    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MAG_FILTER, RL_TEXTURE_FILTER_NEAREST);
+    // LINEAR filtering enables hardware interpolation for smoother PCF
+    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MIN_FILTER, RL_TEXTURE_FILTER_LINEAR);
+    rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_MAG_FILTER, RL_TEXTURE_FILTER_LINEAR);
     rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_WRAP_S, RL_TEXTURE_WRAP_CLAMP);
     rlTextureParameters(shadowMapDepthTex, RL_TEXTURE_WRAP_T, RL_TEXTURE_WRAP_CLAMP);
 
@@ -115,14 +117,14 @@ void LightManager::setupShadowMap(const std::string &depthVsPath,
         }
     }
 
-    // Push initial shadow state to shaders (ensures shadowsEnabled=0 when defaulting off)
+    // Push initial shadow state
     updateShadowUniforms();
 
-    TraceLog(LOG_INFO, "LightManager: Shadow map initialized (%dx%d, FBO: %u, Depth: %u)",
-             SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, shadowMapFBO, shadowMapDepthTex);
+    TraceLog(LOG_INFO, "LightManager: Shadow atlas initialized (%dx%d, %d cascades, FBO: %u, Depth: %u)",
+             SHADOW_ATLAS_SIZE, SHADOW_ATLAS_SIZE, NUM_CASCADES, shadowMapFBO, shadowMapDepthTex);
 }
 
-void LightManager::updateLightSpaceMatrix(Vector3 cameraPos) {
+void LightManager::updateCascadeMatrices(const Camera3D &camera, float cameraNear, float screenAspect) {
     if (!shadowMapReady) return;
 
     // Find the first enabled directional light
@@ -134,29 +136,111 @@ void LightManager::updateLightSpaceMatrix(Vector3 cameraPos) {
             break;
         }
     }
-
     if (!dirLight) return;
 
-    // Compute light direction (from light position toward target)
     Vector3 lightDir = Vector3Normalize(Vector3Subtract(dirLight->target, dirLight->position));
 
-    // Position the shadow camera behind the scene, centered on the player area
-    Vector3 shadowCenter = cameraPos;
-    shadowCenter.y = 0.0f; // Focus at ground level
-    Vector3 lightPos = Vector3Subtract(shadowCenter, Vector3Scale(lightDir, shadowFar * 0.5f));
+    // Practical split scheme: blend between logarithmic and uniform splits
+    float splits[NUM_CASCADES + 1];
+    splits[0] = cameraNear;
+    for (int i = 1; i <= NUM_CASCADES; i++) {
+        float p = (float)i / (float)NUM_CASCADES;
+        float uniform_split = cameraNear + (shadowFar - cameraNear) * p;
+        float log_split = cameraNear * powf(shadowFar / cameraNear, p);
+        splits[i] = cascadeLambda * log_split + (1.0f - cascadeLambda) * uniform_split;
+    }
 
-    // Handle edge case: light direction parallel to up vector
+    // Store cascade far distances for fragment shader
+    for (int i = 0; i < NUM_CASCADES; i++) {
+        cascadeSplits[i] = splits[i + 1];
+    }
+
+    // Camera parameters
+    float fovY = camera.fovy * DEG2RAD;
+    float tanHalfFovY = tanf(fovY * 0.5f);
+    float tanHalfFovX = tanHalfFovY * screenAspect;
+
+    Vector3 camPos = camera.position;
+    Vector3 camFwd = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
+    Vector3 camRight = Vector3Normalize(Vector3CrossProduct(camFwd, camera.up));
+    Vector3 camUp = Vector3CrossProduct(camRight, camFwd);
+
+    // Handle light direction parallel to up vector
     Vector3 up = {0.0f, 1.0f, 0.0f};
     if (fabsf(Vector3DotProduct(lightDir, up)) > 0.99f) {
         up = {0.0f, 0.0f, 1.0f};
     }
 
-    Matrix lightView = MatrixLookAt(lightPos, shadowCenter, up);
-    Matrix lightProj = MatrixOrtho(-shadowOrthoSize, shadowOrthoSize,
-                                    -shadowOrthoSize, shadowOrthoSize,
-                                    shadowNear, shadowFar);
+    for (int c = 0; c < NUM_CASCADES; c++) {
+        float nearDist = splits[c];
+        float farDist = splits[c + 1];
 
-    lightSpaceMatrix = MatrixMultiply(lightView, lightProj);
+        // Compute 8 frustum corners for this cascade slice
+        float xn = nearDist * tanHalfFovX;
+        float yn = nearDist * tanHalfFovY;
+        float xf = farDist * tanHalfFovX;
+        float yf = farDist * tanHalfFovY;
+
+        Vector3 nc = Vector3Add(camPos, Vector3Scale(camFwd, nearDist));
+        Vector3 fc = Vector3Add(camPos, Vector3Scale(camFwd, farDist));
+
+        Vector3 corners[8];
+        // Near plane corners
+        corners[0] = Vector3Add(Vector3Add(nc, Vector3Scale(camRight, -xn)), Vector3Scale(camUp,  yn));
+        corners[1] = Vector3Add(Vector3Add(nc, Vector3Scale(camRight,  xn)), Vector3Scale(camUp,  yn));
+        corners[2] = Vector3Add(Vector3Add(nc, Vector3Scale(camRight,  xn)), Vector3Scale(camUp, -yn));
+        corners[3] = Vector3Add(Vector3Add(nc, Vector3Scale(camRight, -xn)), Vector3Scale(camUp, -yn));
+        // Far plane corners
+        corners[4] = Vector3Add(Vector3Add(fc, Vector3Scale(camRight, -xf)), Vector3Scale(camUp,  yf));
+        corners[5] = Vector3Add(Vector3Add(fc, Vector3Scale(camRight,  xf)), Vector3Scale(camUp,  yf));
+        corners[6] = Vector3Add(Vector3Add(fc, Vector3Scale(camRight,  xf)), Vector3Scale(camUp, -yf));
+        corners[7] = Vector3Add(Vector3Add(fc, Vector3Scale(camRight, -xf)), Vector3Scale(camUp, -yf));
+
+        // Find bounding sphere: centroid + max radius (rotationally stable)
+        Vector3 center = {0, 0, 0};
+        for (int i = 0; i < 8; i++) {
+            center = Vector3Add(center, corners[i]);
+        }
+        center = Vector3Scale(center, 1.0f / 8.0f);
+
+        float radius = 0.0f;
+        for (int i = 0; i < 8; i++) {
+            float dist = Vector3Length(Vector3Subtract(corners[i], center));
+            if (dist > radius) radius = dist;
+        }
+        // Round up radius to reduce jitter
+        radius = ceilf(radius * 16.0f) / 16.0f;
+
+        // Build light view matrix: position the light just far enough behind
+        // the cascade center to capture objects within the bounding sphere.
+        // Using a tight offset (2x radius) instead of shadowFar gives much
+        // better depth resolution, which is critical for small shadow casters
+        // like characters (scale 0.05 = ~5 world units tall).
+        float lightOffset = radius * 2.0f;
+        Vector3 lightPos = Vector3Subtract(center, Vector3Scale(lightDir, lightOffset));
+        Matrix lightView = MatrixLookAt(lightPos, center, up);
+
+        // Tight near/far: objects in the sphere span [offset-radius, offset+radius]
+        // from the light. Add margin for objects casting shadows from outside the sphere.
+        float projNear = 0.1f;
+        float projFar = lightOffset + radius + 100.0f;
+        Matrix lightProj = MatrixOrtho(-radius, radius, -radius, radius,
+                                        projNear, projFar);
+
+        // Texel snapping: quantize the light-space translation to whole texel increments
+        // to prevent shadow swimming when the camera moves
+        float texelSize = (2.0f * radius) / (float)CASCADE_SIZE;
+        float cx = lightView.m0 * center.x + lightView.m4 * center.y +
+                   lightView.m8 * center.z + lightView.m12;
+        float cy = lightView.m1 * center.x + lightView.m5 * center.y +
+                   lightView.m9 * center.z + lightView.m13;
+        float dx = fmodf(cx, texelSize);
+        float dy = fmodf(cy, texelSize);
+        lightView.m12 -= dx;
+        lightView.m13 -= dy;
+
+        cascadeMatrices[c] = MatrixMultiply(lightView, lightProj);
+    }
 }
 
 void LightManager::beginShadowPass() {
@@ -166,22 +250,39 @@ void LightManager::beginShadowPass() {
     savedProjection = rlGetMatrixProjection();
     savedModelview = rlGetMatrixModelview();
 
-    // Enable shadow FBO
+    // Enable shadow atlas FBO and clear entire atlas once
     rlEnableFramebuffer(shadowMapFBO);
-    rlViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+    rlViewport(0, 0, SHADOW_ATLAS_SIZE, SHADOW_ATLAS_SIZE);
     rlClearColor(255, 255, 255, 255);
     rlClearScreenBuffers();
 
-    // Use pre-computed lightSpaceMatrix from updateLightSpaceMatrix()
-    rlSetMatrixModelview(lightSpaceMatrix);
-    rlSetMatrixProjection(MatrixIdentity());
-
     rlEnableDepthTest();
     rlEnableDepthMask();
+    rlDisableColorBlend();
+
+    // Disable face culling so skinned meshes with varied winding still write depth
+    rlDisableBackfaceCulling();
+}
+
+void LightManager::setCascade(int cascade) {
+    if (cascade < 0 || cascade >= NUM_CASCADES) return;
+
+    // Set viewport to correct quadrant in the 2x2 atlas
+    int x = (cascade % 2) * CASCADE_SIZE;
+    int y = (cascade / 2) * CASCADE_SIZE;
+    rlViewport(x, y, CASCADE_SIZE, CASCADE_SIZE);
+
+    // Set the light-space matrix for this cascade
+    rlSetMatrixModelview(cascadeMatrices[cascade]);
+    rlSetMatrixProjection(MatrixIdentity());
 }
 
 void LightManager::endShadowPass() {
     if (!shadowMapReady || !shadowsEnabled) return;
+
+    // Restore culling and blending state
+    rlEnableBackfaceCulling();
+    rlEnableColorBlend();
 
     rlDisableFramebuffer();
 
@@ -213,9 +314,18 @@ void LightManager::registerShadowShader(Shader targetShader) {
     ShadowShaderLocs &locs = shadowShaders[shadowShaderCount];
     locs.shader = targetShader;
     locs.shadowEnabledLoc = GetShaderLocation(targetShader, "shadowsEnabled");
-    locs.lightSpaceMatrixLoc = GetShaderLocation(targetShader, "lightSpaceMatrix");
+
+    // CSM: look up individual cascade matrix locations
+    for (int c = 0; c < NUM_CASCADES; c++) {
+        char name[64];
+        snprintf(name, sizeof(name), "cascadeMatrices[%d]", c);
+        locs.cascadeMatricesLoc[c] = GetShaderLocation(targetShader, name);
+    }
+    locs.cascadeSplitsLoc = GetShaderLocation(targetShader, "cascadeSplits");
+
     locs.shadowMapLoc = GetShaderLocation(targetShader, "shadowMap");
     locs.shadowBiasLoc = GetShaderLocation(targetShader, "shadowBias");
+    locs.shadowNormalOffsetLoc = GetShaderLocation(targetShader, "shadowNormalOffset");
     shadowShaderCount++;
 
     // Bind shadow map sampler once (texture unit doesn't change)
@@ -240,12 +350,22 @@ void LightManager::updateShadowUniforms() {
         ShadowShaderLocs &locs = shadowShaders[i];
         if (locs.shader.id == 0) continue;
 
-        if (locs.lightSpaceMatrixLoc >= 0)
-            SetShaderValueMatrix(locs.shader, locs.lightSpaceMatrixLoc, lightSpaceMatrix);
+        // Push cascade matrices
+        for (int c = 0; c < NUM_CASCADES; c++) {
+            if (locs.cascadeMatricesLoc[c] >= 0)
+                SetShaderValueMatrix(locs.shader, locs.cascadeMatricesLoc[c], cascadeMatrices[c]);
+        }
+
+        // Push cascade split distances as vec4
+        if (locs.cascadeSplitsLoc >= 0)
+            SetShaderValue(locs.shader, locs.cascadeSplitsLoc, cascadeSplits, SHADER_UNIFORM_VEC4);
+
         if (locs.shadowEnabledLoc >= 0)
             SetShaderValue(locs.shader, locs.shadowEnabledLoc, &enabled, SHADER_UNIFORM_INT);
         if (locs.shadowBiasLoc >= 0)
             SetShaderValue(locs.shader, locs.shadowBiasLoc, &shadowBias, SHADER_UNIFORM_FLOAT);
+        if (locs.shadowNormalOffsetLoc >= 0)
+            SetShaderValue(locs.shader, locs.shadowNormalOffsetLoc, &shadowNormalOffset, SHADER_UNIFORM_FLOAT);
     }
 }
 
@@ -367,16 +487,19 @@ void LightManager::gui() {
         ImGui::DragFloat2("Offset", offset, 0.01f, -1.0f, 1.0f);
     }
 
-    // Shadow settings
+    // Shadow settings (CSM)
     if (ImGui::CollapsingHeader("Shadows")) {
         ImGui::Checkbox("Enable Shadows", &shadowsEnabled);
         ImGui::SliderInt("Update Interval", &shadowUpdateInterval, 1, 6);
-        ImGui::SliderFloat("Shadow Ortho Size", &shadowOrthoSize, 50.0f, 500.0f);
-        ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0001f, 0.05f, "%.4f");
-        ImGui::SliderFloat("Shadow Near", &shadowNear, 0.1f, 10.0f);
-        ImGui::SliderFloat("Shadow Far", &shadowFar, 100.0f, 2000.0f);
+        ImGui::SliderFloat("Cascade Lambda", &cascadeLambda, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0001f, 0.1f, "%.4f");
+        ImGui::SliderFloat("Normal Offset", &shadowNormalOffset, 0.0f, 2.0f, "%.2f");
+        ImGui::SliderFloat("Shadow Far", &shadowFar, 100.0f, 20000.0f);
         if (shadowMapReady) {
-            ImGui::TextColored(ImVec4(0, 1, 0, 1), "Shadow Map: %dx%d", SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+            ImGui::TextColored(ImVec4(0, 1, 0, 1), "Shadow Atlas: %dx%d (%d cascades)",
+                              SHADOW_ATLAS_SIZE, SHADOW_ATLAS_SIZE, NUM_CASCADES);
+            ImGui::Text("Cascade splits: %.1f | %.1f | %.1f | %.1f",
+                        cascadeSplits[0], cascadeSplits[1], cascadeSplits[2], cascadeSplits[3]);
         } else {
             ImGui::TextColored(ImVec4(1, 0, 0, 1), "Shadow Map: Not initialized");
         }
@@ -406,7 +529,6 @@ void LightManager::unload() {
         shadowDepthShader = {0};
     }
     if (shadowMaterial.shader.id > 0) {
-        // Don't unload default material maps, just clear the reference
         shadowMaterial = {0};
     }
     if (shadowMapFBO > 0) {

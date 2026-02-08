@@ -40,7 +40,7 @@ namespace moiras
 
     renderLoadingFrame("Caricamento mappa...", 0.10f);
 
-    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.glb");
+    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map2.glb");
 
     SetTextureFilter(map->model.materials[0].maps->texture,
                      TEXTURE_FILTER_ANISOTROPIC_8X);
@@ -152,21 +152,17 @@ namespace moiras
       TraceLog(LOG_INFO, "Shader assigned, ID: %d",
                mapPtr->model.materials[0].shader.id);
     }
-
     lightmanager.addLight(light1Ptr);
     lightmanager.addLight(light2Ptr);
-
     Character::setSharedShader(celShader);
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
-
     renderLoadingFrame("Caricamento personaggio...", 0.92f);
-
     auto player = std::make_unique<Character>();
     player->name = "Player";
     player->tag = "player";
     player->loadModel(modelManager, player->model_path);
-    player->position = {0.0f, 10.0f, 0.0f}; // Posizione iniziale
-    player->scale = .05f;
+    player->position = {0.0f, 10.0f, 0.0f};
+    player->scale = 0.05f;
     registerObject(player->id, player.get());
     auto playerPtr = getObjectByID<Character>(player->id);
     root.addChild(std::move(player));
@@ -176,8 +172,6 @@ namespace moiras
       playerController->setMovementSpeed(12.0f);
       TraceLog(LOG_INFO, "Player controller created and initialized");
     }
-
-    // Configura lo StructureBuilder con le dipendenze
     auto cameraPtr = root.getChildOfType<GameCamera>();
     if (structureBuilder && mapPtr)
     {
@@ -192,20 +186,14 @@ namespace moiras
                "StructureBuilder configured with Map, NavMesh and ModelManager");
     }
 
-    // Imposta lo shader condiviso per le strutture
     Structure::setSharedShader(celShader);
-
-    // Setup shadow mapping
     renderLoadingFrame("Inizializzazione ombre...", 0.96f);
     lightmanager.registerShadowShader(celShader);
     lightmanager.setupShadowMap("../assets/shaders/shadow_depth.vs",
                                  "../assets/shaders/shadow_depth.fs");
-
     renderLoadingFrame("Pronto!", 1.0f);
-
     TraceLog(LOG_INFO, "SCRIPTING: Lua scripting system ready");
   }
-
   void Game::renderLoadingFrame(const char *message, float progress)
   {
     BeginDrawing();
@@ -330,39 +318,59 @@ namespace moiras
       lightmanager.updateCameraPosition(camera->rcamera.position);
       lightmanager.updateAllLights();
 
+      // Update cel shader uniforms needed for CSM shadow mapping
+      {
+        float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
+        SetShaderValue(celShader, GetShaderLocation(celShader, "viewPos"), camPos, SHADER_UNIFORM_VEC3);
+
+        // Set light position from first directional light for cel shading
+        for (int i = 0; i < MAX_LIGHTS; i++) {
+          if (lightmanager.lights[i] && lightmanager.lights[i]->enabled &&
+              lightmanager.lights[i]->getType() == LightType::DIRECTIONAL) {
+            float lpos[3] = {lightmanager.lights[i]->position.x,
+                             lightmanager.lights[i]->position.y,
+                             lightmanager.lights[i]->position.z};
+            SetShaderValue(celShader, GetShaderLocation(celShader, "lightPos"), lpos, SHADER_UNIFORM_VEC3);
+            break;
+          }
+        }
+      }
+
       // Update sea shader camera position
       if (map && map->seaShaderLoaded.id > 0 && map->seaViewPosLoc >= 0) {
         float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
         SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
       }
 
-      // Always push shadow enabled/disabled state to shaders so toggling works
-      lightmanager.updateShadowUniforms();
-
-      // Shadow pass: render depth from light's perspective (only when enabled)
+      // Shadow pass: render depth from light's perspective using CSM
       if (lightmanager.areShadowsEnabled()) {
         lightmanager.shadowFrameCounter++;
         bool shouldUpdateShadow = (lightmanager.shadowFrameCounter % lightmanager.shadowUpdateInterval) == 0;
 
         if (shouldUpdateShadow) {
-          lightmanager.updateLightSpaceMatrix(camera->rcamera.position);
+          float aspect = (float)GetScreenWidth() / (float)GetScreenHeight();
+          lightmanager.updateCascadeMatrices(camera->rcamera, nearPlane, aspect);
 
           lightmanager.beginShadowPass();
 
-          // Draw shadow casters with depth-only shader
           Material shadowMat = lightmanager.getShadowMaterial();
 
-          // Map terrain
-          if (map && map->model.meshCount > 0) {
-            Matrix mapTransform = MatrixMultiply(map->model.transform,
-                MatrixTranslate(map->position.x, map->position.y, map->position.z));
-            for (int i = 0; i < map->model.meshCount; i++) {
-              DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
-            }
-          }
+          // Render all shadow casters into each cascade
+          for (int c = 0; c < NUM_CASCADES; c++) {
+            lightmanager.setCascade(c);
 
-          // Characters, structures, and other shadow casters
-          drawShadowCastersRecursive(&root, shadowMat);
+            // Map terrain
+            if (map && map->model.meshCount > 0) {
+              Matrix mapTransform = MatrixMultiply(map->model.transform,
+                  MatrixTranslate(map->position.x, map->position.y, map->position.z));
+              for (int i = 0; i < map->model.meshCount; i++) {
+                DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
+              }
+            }
+
+            // Characters, structures, and other shadow casters
+            drawShadowCastersRecursive(&root, shadowMat);
+          }
 
           lightmanager.endShadowPass();
         }
@@ -370,6 +378,10 @@ namespace moiras
         // Bind shadow map texture for the main render pass (every frame)
         lightmanager.bindShadowMap();
       }
+
+      // Push shadow uniforms AFTER the shadow pass so fragment shaders
+      // use the same cascade matrices the shadow map was rendered with.
+      lightmanager.updateShadowUniforms();
 
       // Render scene to texture
       BeginTextureMode(renderTarget);

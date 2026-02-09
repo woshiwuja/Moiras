@@ -46,6 +46,9 @@ EnvironmentalObject::~EnvironmentalObject()
         UnloadMesh(m_rockMesh);
         UnloadMaterial(m_material);
     }
+    if (m_hasShader) {
+        UnloadShader(m_currentShader);
+    }
 }
 
 Mesh EnvironmentalObject::generateMesh(RockMeshType type, float size)
@@ -77,7 +80,17 @@ void EnvironmentalObject::generate(const Model &terrain)
 
     m_rockMesh = generateMesh(m_meshType, m_rockSize);
 
+    // Carica shader di instancing (richiesto da DrawMeshInstanced)
+    if (!m_hasShader) {
+        m_currentShader = LoadShader("../assets/shaders/instancing.vs",
+                                     "../assets/shaders/instancing.fs");
+        m_currentShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(m_currentShader, "mvp");
+        m_currentShader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocationAttrib(m_currentShader, "instanceTransform");
+        m_hasShader = true;
+    }
+
     m_material = LoadMaterialDefault();
+    m_material.shader = m_currentShader;
     m_material.maps[MATERIAL_MAP_DIFFUSE].color = {180, 210, 50, 255};
 
     BoundingBox bounds = GetMeshBoundingBox(terrain.meshes[0]);
@@ -141,7 +154,6 @@ void EnvironmentalObject::generate(const Model &terrain)
 
 void EnvironmentalObject::setShader(Shader shader)
 {
-    // No-op: usa materiale default per debug
     (void)shader;
 }
 

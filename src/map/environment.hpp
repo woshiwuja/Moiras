@@ -29,6 +29,11 @@ private:
     bool m_hasShader;
     RockMeshType m_meshType;
 
+    // Brush
+    bool m_brushMode;
+    float m_brushRadius;
+    int m_brushDensity;
+
     Mesh generateMesh(RockMeshType type, float size);
 
 public:
@@ -41,6 +46,17 @@ public:
     void setShader(Shader shader);
     void setMeshType(RockMeshType type);
     RockMeshType getMeshType() const { return m_meshType; }
+
+    // Brush
+    void paintAt(Vector3 center);
+    void eraseAt(Vector3 center);
+    void clearAll();
+    bool isBrushMode() const { return m_brushMode; }
+    void setBrushMode(bool enabled) { m_brushMode = enabled; }
+    float getBrushRadius() const { return m_brushRadius; }
+    void setBrushRadius(float r) { m_brushRadius = r; }
+    int getBrushDensity() const { return m_brushDensity; }
+    void setBrushDensity(int d) { m_brushDensity = d; }
 
     void draw() override;
     void gui() override;

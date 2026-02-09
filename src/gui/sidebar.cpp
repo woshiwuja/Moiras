@@ -463,6 +463,46 @@ namespace moiras
                         environmentObject->setMeshType((RockMeshType)i);
                     }
                 }
+
+                Spacing();
+                Separator();
+                Text("Brush Tool");
+                Spacing();
+
+                bool brushActive = environmentObject->isBrushMode();
+                if (brushActive) {
+                    PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+                }
+                if (Button(brushActive ? "Brush: ON" : "Brush: OFF", ImVec2(-1, 30)))
+                {
+                    environmentObject->setBrushMode(!brushActive);
+                }
+                if (brushActive) {
+                    PopStyleColor();
+                }
+
+                if (brushActive) {
+                    TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Left Click: Paint");
+                    TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Right Click: Erase");
+                }
+
+                float brushRadius = environmentObject->getBrushRadius();
+                if (SliderFloat("Brush Radius", &brushRadius, 2.0f, 50.0f))
+                {
+                    environmentObject->setBrushRadius(brushRadius);
+                }
+
+                int brushDensity = environmentObject->getBrushDensity();
+                if (SliderInt("Brush Density", &brushDensity, 1, 30))
+                {
+                    environmentObject->setBrushDensity(brushDensity);
+                }
+
+                Spacing();
+                if (Button("Clear All Rocks", ImVec2(-1, 0)))
+                {
+                    environmentObject->clearAll();
+                }
             }
             else
             {

@@ -322,10 +322,12 @@ namespace moiras
       auto camera = root.getChildOfType<GameCamera>();
       auto map = root.getChildOfType<Map>();
 
-      // Aggiorna il player controller (solo se non siamo in building mode)
+      // Aggiorna il player controller (solo se non siamo in building mode o brush mode)
+      auto *rocks = root.getChildOfType<EnvironmentalObject>();
       bool inBuildingMode =
           (structureBuilder && structureBuilder->isBuildingMode());
-      if (playerController && camera && !inBuildingMode)
+      bool inBrushMode = (rocks && rocks->isBrushMode());
+      if (playerController && camera && !inBuildingMode && !inBrushMode)
       {
         playerController->update(camera);
       }
@@ -433,12 +435,26 @@ namespace moiras
 
       if (closest.hit)
       {
-        DrawCube(closest.point, 0.3f, 0.3f, 0.3f, ORANGE);
-        Vector3 normalEnd;
-        normalEnd.x = closest.point.x + closest.normal.x;
-        normalEnd.y = closest.point.y + closest.normal.y;
-        normalEnd.z = closest.point.z + closest.normal.z;
-        DrawLine3D(closest.point, normalEnd, RED);
+        // Brush mode: anteprima cerchio e input paint/erase
+        if (inBrushMode && rocks) {
+          float brushR = rocks->getBrushRadius();
+          DrawCircle3D(closest.point, brushR,
+                       {1.0f, 0.0f, 0.0f}, 90.0f, {0, 200, 0, 180});
+
+          if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            rocks->paintAt(closest.point);
+          }
+          if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+            rocks->eraseAt(closest.point);
+          }
+        } else {
+          DrawCube(closest.point, 0.3f, 0.3f, 0.3f, ORANGE);
+          Vector3 normalEnd;
+          normalEnd.x = closest.point.x + closest.normal.x;
+          normalEnd.y = closest.point.y + closest.normal.y;
+          normalEnd.z = closest.point.z + closest.normal.z;
+          DrawLine3D(closest.point, normalEnd, RED);
+        }
       }
 
       camera->endMode3D();

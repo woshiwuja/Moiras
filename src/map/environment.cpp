@@ -7,14 +7,31 @@
 
 namespace moiras {
 
+const char *rockMeshTypeName(RockMeshType type)
+{
+    switch (type) {
+        case RockMeshType::CUBE:       return "Cube";
+        case RockMeshType::SPHERE:     return "Sphere";
+        case RockMeshType::HEMISPHERE: return "Hemisphere";
+        case RockMeshType::CYLINDER:   return "Cylinder";
+        case RockMeshType::CONE:       return "Cone";
+        default:                       return "Unknown";
+    }
+}
+
 EnvironmentalObject::EnvironmentalObject(int instanceCount, float rockSize, float spawnRadius)
     : GameObject("Rocks"),
       m_rockMesh{0},
       m_material{0},
+      m_currentShader{0},
+      m_terrain(nullptr),
       m_instanceCount(instanceCount),
+      m_targetInstanceCount(instanceCount),
       m_rockSize(rockSize),
       m_spawnRadius(spawnRadius),
-      m_initialized(false)
+      m_initialized(false),
+      m_hasShader(false),
+      m_meshType(RockMeshType::CUBE)
 {
 }
 
@@ -26,6 +43,23 @@ EnvironmentalObject::~EnvironmentalObject()
     }
 }
 
+Mesh EnvironmentalObject::generateMesh(RockMeshType type, float size)
+{
+    switch (type) {
+        case RockMeshType::SPHERE:
+            return GenMeshSphere(size * 0.5f, 8, 8);
+        case RockMeshType::HEMISPHERE:
+            return GenMeshHemiSphere(size * 0.5f, 8, 8);
+        case RockMeshType::CYLINDER:
+            return GenMeshCylinder(size * 0.4f, size * 0.7f, 8);
+        case RockMeshType::CONE:
+            return GenMeshCone(size * 0.5f, size * 0.8f, 8);
+        case RockMeshType::CUBE:
+        default:
+            return GenMeshCube(size, size * 0.7f, size);
+    }
+}
+
 void EnvironmentalObject::generate(const Model &terrain)
 {
     if (m_initialized) {
@@ -33,20 +67,25 @@ void EnvironmentalObject::generate(const Model &terrain)
         UnloadMaterial(m_material);
     }
 
-    // Genera mesh cubica per le rocce
-    m_rockMesh = GenMeshCube(m_rockSize, m_rockSize * 0.7f, m_rockSize);
+    m_terrain = &terrain;
+    m_instanceCount = m_targetInstanceCount;
+
+    // Genera la mesh in base al tipo selezionato
+    m_rockMesh = generateMesh(m_meshType, m_rockSize);
 
     // Materiale base grigio per le rocce
     m_material = LoadMaterialDefault();
     m_material.maps[MATERIAL_MAP_DIFFUSE].color = {120, 110, 100, 255};
 
+    if (m_hasShader) {
+        m_material.shader = m_currentShader;
+    }
+
     // Calcola i limiti del terreno
     BoundingBox bounds = GetMeshBoundingBox(terrain.meshes[0]);
-    // Applica la trasformazione del modello ai bounds
     Vector3 boundsMin = Vector3Transform(bounds.min, terrain.transform);
     Vector3 boundsMax = Vector3Transform(bounds.max, terrain.transform);
 
-    // Limita l'area di spawn al raggio configurato
     float minX = fmaxf(boundsMin.x, -m_spawnRadius);
     float maxX = fminf(boundsMax.x, m_spawnRadius);
     float minZ = fmaxf(boundsMin.z, -m_spawnRadius);
@@ -58,11 +97,9 @@ void EnvironmentalObject::generate(const Model &terrain)
     srand(42); // Seed fisso per risultati riproducibili
 
     for (int i = 0; i < m_instanceCount; i++) {
-        // Posizione casuale nell'area di spawn
         float x = minX + ((float)rand() / RAND_MAX) * (maxX - minX);
         float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
 
-        // Raycast verso il basso per trovare l'altezza del terreno
         Ray ray;
         ray.position = {x, 1000.0f, z};
         ray.direction = {0.0f, -1.0f, 0.0f};
@@ -78,16 +115,13 @@ void EnvironmentalObject::generate(const Model &terrain)
             }
         }
 
-        // Salta rocce che finirebbero sotto il livello del mare
         if (!onGround || y < 0.5f) continue;
 
-        // Scala e rotazione casuali per varieta' visiva
         float scaleVar = 0.5f + ((float)rand() / RAND_MAX) * 1.5f;
         float rotY = ((float)rand() / RAND_MAX) * 360.0f * DEG2RAD;
         float rotX = ((float)rand() / RAND_MAX) * 15.0f * DEG2RAD;
         float rotZ = ((float)rand() / RAND_MAX) * 15.0f * DEG2RAD;
 
-        // Offset Y per interrare leggermente la roccia
         y -= m_rockSize * scaleVar * 0.15f;
 
         Matrix matScale = MatrixScale(scaleVar, scaleVar * 0.6f, scaleVar);
@@ -103,13 +137,29 @@ void EnvironmentalObject::generate(const Model &terrain)
     m_instanceCount = (int)m_transforms.size();
     m_initialized = true;
 
-    TraceLog(LOG_INFO, "Rocks: Generated %d instanced rocks (GPU instancing)", m_instanceCount);
+    TraceLog(LOG_INFO, "Rocks: Generated %d instanced rocks (mesh: %s)",
+             m_instanceCount, rockMeshTypeName(m_meshType));
 }
 
 void EnvironmentalObject::setShader(Shader shader)
 {
+    m_currentShader = shader;
+    m_hasShader = true;
     if (m_initialized) {
         m_material.shader = shader;
+    }
+}
+
+void EnvironmentalObject::setMeshType(RockMeshType type)
+{
+    if (type == m_meshType) return;
+    m_meshType = type;
+
+    // Rigenera solo la mesh, mantieni le posizioni
+    if (m_initialized) {
+        UnloadMesh(m_rockMesh);
+        m_rockMesh = generateMesh(m_meshType, m_rockSize);
+        TraceLog(LOG_INFO, "Rocks: Mesh changed to %s", rockMeshTypeName(m_meshType));
     }
 }
 
@@ -125,6 +175,7 @@ void EnvironmentalObject::gui()
     ImGui::PushID(this);
     if (ImGui::CollapsingHeader("Rocks (Instanced)")) {
         ImGui::Text("Instances: %d", m_instanceCount);
+        ImGui::Text("Mesh: %s", rockMeshTypeName(m_meshType));
         ImGui::Text("GPU Instancing: Active");
         ImGui::Checkbox("Visible", &isVisible);
 

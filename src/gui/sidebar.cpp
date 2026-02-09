@@ -1,6 +1,7 @@
 // filepicker.cpp
 #include "sidebar.h"
 #include "../building/structure_builder.h"
+#include "../map/environment.hpp"
 #include "../time/time_manager.h"
 #include "script_editor.h"
 #include "../../rlImGui/rlImGui.h"
@@ -439,6 +440,33 @@ namespace moiras
             if (this->lightManager != nullptr)
             {
                 Checkbox("Shadows", &this->lightManager->shadowsEnabled);
+            }
+        }
+
+        if (CollapsingHeader("Environment"))
+        {
+            if (environmentObject)
+            {
+                Text("Instanced Rocks");
+                Separator();
+
+                Text("Instances: %d", environmentObject->getInstanceCount());
+                Checkbox("Visible##rocks", &environmentObject->isVisible);
+
+                Spacing();
+                Text("Rock Mesh Type:");
+                int currentType = (int)environmentObject->getMeshType();
+                for (int i = 0; i < (int)RockMeshType::COUNT; i++)
+                {
+                    if (RadioButton(rockMeshTypeName((RockMeshType)i), &currentType, i))
+                    {
+                        environmentObject->setMeshType((RockMeshType)i);
+                    }
+                }
+            }
+            else
+            {
+                TextColored(ImVec4(1, 0.5f, 0, 1), "EnvironmentalObject not set");
             }
         }
 

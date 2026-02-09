@@ -8,8 +8,9 @@
 
 namespace moiras
 {
-    class StructureBuilder; // Forward declaration
-    class ScriptEditor;     // Forward declaration
+    class StructureBuilder;      // Forward declaration
+    class ScriptEditor;          // Forward declaration
+    class EnvironmentalObject;   // Forward declaration
 
     class Sidebar : public GameObject
     {
@@ -30,6 +31,9 @@ namespace moiras
 
         // Puntatore allo script editor
         ScriptEditor *scriptEditor = nullptr;
+
+        // Puntatore all'environment object (instanced rocks)
+        EnvironmentalObject *environmentObject = nullptr;
 
         // Puntatore al toggle outline shader
         bool *outlineEnabled = nullptr;

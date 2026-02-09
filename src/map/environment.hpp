@@ -5,15 +5,31 @@
 
 namespace moiras {
 
+enum class RockMeshType {
+    CUBE = 0,
+    SPHERE,
+    HEMISPHERE,
+    CYLINDER,
+    CONE,
+    COUNT
+};
+
 class EnvironmentalObject : public GameObject {
 private:
     Mesh m_rockMesh;
     Material m_material;
+    Shader m_currentShader;
     std::vector<Matrix> m_transforms;
+    const Model *m_terrain;
     int m_instanceCount;
+    int m_targetInstanceCount;
     float m_rockSize;
     float m_spawnRadius;
     bool m_initialized;
+    bool m_hasShader;
+    RockMeshType m_meshType;
+
+    Mesh generateMesh(RockMeshType type, float size);
 
 public:
     EnvironmentalObject(int instanceCount = 500, float rockSize = 1.0f, float spawnRadius = 200.0f);
@@ -23,6 +39,8 @@ public:
 
     void generate(const Model &terrain);
     void setShader(Shader shader);
+    void setMeshType(RockMeshType type);
+    RockMeshType getMeshType() const { return m_meshType; }
 
     void draw() override;
     void gui() override;
@@ -31,5 +49,7 @@ public:
     Mesh &getMesh() { return m_rockMesh; }
     const std::vector<Matrix> &getTransforms() const { return m_transforms; }
 };
+
+const char *rockMeshTypeName(RockMeshType type);
 
 } // namespace moiras

@@ -21,33 +21,31 @@ const char *rockMeshTypeName(RockMeshType type)
     }
 }
 
-EnvironmentalObject::EnvironmentalObject(int instanceCount, float rockSize, float spawnRadius)
+EnvironmentalObject::EnvironmentalObject(float rockSize, float spawnRadius)
     : GameObject("Rocks"),
-      m_rockMesh{0},
-      m_material{0},
-      m_currentShader{0},
+      m_instancingShader{0},
       m_terrain(nullptr),
-      m_instanceCount(instanceCount),
-      m_targetInstanceCount(instanceCount),
       m_rockSize(rockSize),
       m_spawnRadius(spawnRadius),
       m_initialized(false),
-      m_hasShader(false),
-      m_meshType(RockMeshType::CUBE),
+      m_shaderLoaded(false),
+      m_cameraPos{0},
+      m_cullDistance(150.0f),
       m_brushMode(false),
       m_brushRadius(10.0f),
-      m_brushDensity(5)
+      m_brushDensity(5),
+      m_activePatch(0)
 {
 }
 
 EnvironmentalObject::~EnvironmentalObject()
 {
-    if (m_initialized) {
-        UnloadMesh(m_rockMesh);
-        UnloadMaterial(m_material);
+    for (auto &patch : m_patches) {
+        UnloadMesh(patch.mesh);
+        UnloadMaterial(patch.material);
     }
-    if (m_hasShader) {
-        UnloadShader(m_currentShader);
+    if (m_shaderLoaded) {
+        UnloadShader(m_instancingShader);
     }
 }
 
@@ -68,30 +66,62 @@ Mesh EnvironmentalObject::generateMesh(RockMeshType type, float size)
     }
 }
 
-void EnvironmentalObject::generate(const Model &terrain)
+void EnvironmentalObject::loadShader()
 {
-    if (m_initialized) {
-        UnloadMesh(m_rockMesh);
-        UnloadMaterial(m_material);
-    }
+    if (m_shaderLoaded) return;
 
+    m_instancingShader = LoadShader("../assets/shaders/instancing.vs",
+                                    "../assets/shaders/instancing.fs");
+    m_instancingShader.locs[SHADER_LOC_MATRIX_MVP] =
+        GetShaderLocation(m_instancingShader, "mvp");
+    m_instancingShader.locs[SHADER_LOC_MATRIX_MODEL] =
+        GetShaderLocationAttrib(m_instancingShader, "instanceTransform");
+    m_shaderLoaded = true;
+}
+
+int EnvironmentalObject::findOrCreatePatch(RockMeshType type)
+{
+    for (int i = 0; i < (int)m_patches.size(); i++) {
+        if (m_patches[i].meshType == type) return i;
+    }
+    return addPatch(type);
+}
+
+int EnvironmentalObject::addPatch(RockMeshType type)
+{
+    loadShader();
+
+    RockPatch patch;
+    patch.meshType = type;
+    patch.mesh = generateMesh(type, m_rockSize);
+    patch.material = LoadMaterialDefault();
+    patch.material.shader = m_instancingShader;
+
+    // Colori diversi per patch per distinguerli visivamente
+    Color colors[] = {
+        {180, 210, 50, 255},   // giallo-verde (cube)
+        {100, 180, 220, 255},  // azzurro (sphere)
+        {200, 140, 60, 255},   // arancione (hemisphere)
+        {160, 160, 170, 255},  // grigio (cylinder)
+        {190, 100, 130, 255},  // rosa (cone)
+    };
+    int ci = (int)type < 5 ? (int)type : 0;
+    patch.material.maps[MATERIAL_MAP_DIFFUSE].color = colors[ci];
+
+    m_patches.push_back(std::move(patch));
+    int idx = (int)m_patches.size() - 1;
+
+    TraceLog(LOG_INFO, "Rocks: Created patch %d (%s)", idx, rockMeshTypeName(type));
+    return idx;
+}
+
+void EnvironmentalObject::generate(const Model &terrain, int count, RockMeshType type)
+{
     m_terrain = &terrain;
-    m_instanceCount = m_targetInstanceCount;
+    m_initialized = true;
 
-    m_rockMesh = generateMesh(m_meshType, m_rockSize);
-
-    // Carica shader di instancing (richiesto da DrawMeshInstanced)
-    if (!m_hasShader) {
-        m_currentShader = LoadShader("../assets/shaders/instancing.vs",
-                                     "../assets/shaders/instancing.fs");
-        m_currentShader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(m_currentShader, "mvp");
-        m_currentShader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocationAttrib(m_currentShader, "instanceTransform");
-        m_hasShader = true;
-    }
-
-    m_material = LoadMaterialDefault();
-    m_material.shader = m_currentShader;
-    m_material.maps[MATERIAL_MAP_DIFFUSE].color = {180, 210, 50, 255};
+    int patchIdx = findOrCreatePatch(type);
+    auto &patch = m_patches[patchIdx];
 
     BoundingBox bounds = GetMeshBoundingBox(terrain.meshes[0]);
     Vector3 boundsMin = Vector3Transform(bounds.min, terrain.transform);
@@ -102,12 +132,10 @@ void EnvironmentalObject::generate(const Model &terrain)
     float minZ = fmaxf(boundsMin.z, -m_spawnRadius);
     float maxZ = fminf(boundsMax.z, m_spawnRadius);
 
-    m_transforms.clear();
-    m_transforms.reserve(m_instanceCount);
+    srand(42 + (int)type);
 
-    srand(42);
-
-    for (int i = 0; i < m_instanceCount; i++) {
+    int placed = 0;
+    for (int i = 0; i < count; i++) {
         float x = minX + ((float)rand() / RAND_MAX) * (maxX - minX);
         float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
 
@@ -142,36 +170,43 @@ void EnvironmentalObject::generate(const Model &terrain)
         Matrix matTranslation = MatrixTranslate(x, y, z);
         Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-        m_transforms.push_back(transform);
+        patch.transforms.push_back(transform);
+        placed++;
     }
 
-    m_instanceCount = (int)m_transforms.size();
-    m_initialized = true;
+    m_activePatch = patchIdx;
 
-    TraceLog(LOG_INFO, "Rocks: Generated %d instanced rocks (mesh: %s)",
-             m_instanceCount, rockMeshTypeName(m_meshType));
+    TraceLog(LOG_INFO, "Rocks: Generated %d instances in patch %d (%s)",
+             placed, patchIdx, rockMeshTypeName(type));
 }
 
-void EnvironmentalObject::setShader(Shader shader)
+void EnvironmentalObject::setActivePatch(int idx)
 {
-    (void)shader;
-}
-
-void EnvironmentalObject::setMeshType(RockMeshType type)
-{
-    if (type == m_meshType) return;
-    m_meshType = type;
-
-    if (m_initialized) {
-        UnloadMesh(m_rockMesh);
-        m_rockMesh = generateMesh(m_meshType, m_rockSize);
-        TraceLog(LOG_INFO, "Rocks: Mesh changed to %s", rockMeshTypeName(m_meshType));
+    if (idx >= 0 && idx < (int)m_patches.size()) {
+        m_activePatch = idx;
     }
+}
+
+RockMeshType EnvironmentalObject::getActiveMeshType() const
+{
+    if (m_activePatch >= 0 && m_activePatch < (int)m_patches.size()) {
+        return m_patches[m_activePatch].meshType;
+    }
+    return RockMeshType::CUBE;
+}
+
+void EnvironmentalObject::setActiveMeshType(RockMeshType type)
+{
+    int idx = findOrCreatePatch(type);
+    m_activePatch = idx;
 }
 
 void EnvironmentalObject::paintAt(Vector3 center)
 {
     if (!m_initialized || !m_terrain) return;
+    if (m_patches.empty()) return;
+
+    auto &patch = m_patches[m_activePatch];
 
     for (int i = 0; i < m_brushDensity; i++) {
         float angle = ((float)rand() / RAND_MAX) * 2.0f * PI;
@@ -210,42 +245,68 @@ void EnvironmentalObject::paintAt(Vector3 center)
         Matrix matTranslation = MatrixTranslate(x, y, z);
         Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-        m_transforms.push_back(transform);
+        patch.transforms.push_back(transform);
     }
-
-    m_instanceCount = (int)m_transforms.size();
 }
 
 void EnvironmentalObject::eraseAt(Vector3 center)
 {
-    if (!m_initialized || m_transforms.empty()) return;
+    if (!m_initialized) return;
 
     float r2 = m_brushRadius * m_brushRadius;
 
-    m_transforms.erase(
-        std::remove_if(m_transforms.begin(), m_transforms.end(),
-            [&](const Matrix &mat) {
-                float dx = mat.m12 - center.x;
-                float dz = mat.m14 - center.z;
-                return (dx * dx + dz * dz) <= r2;
-            }),
-        m_transforms.end());
-
-    m_instanceCount = (int)m_transforms.size();
+    // Cancella da tutti i patch nel raggio
+    for (auto &patch : m_patches) {
+        patch.transforms.erase(
+            std::remove_if(patch.transforms.begin(), patch.transforms.end(),
+                [&](const Matrix &mat) {
+                    float dx = mat.m12 - center.x;
+                    float dz = mat.m14 - center.z;
+                    return (dx * dx + dz * dz) <= r2;
+                }),
+            patch.transforms.end());
+    }
 }
 
 void EnvironmentalObject::clearAll()
 {
-    m_transforms.clear();
-    m_instanceCount = 0;
+    for (auto &patch : m_patches) {
+        patch.transforms.clear();
+    }
+}
+
+int EnvironmentalObject::getTotalInstanceCount() const
+{
+    int total = 0;
+    for (auto &patch : m_patches) {
+        total += (int)patch.transforms.size();
+    }
+    return total;
 }
 
 void EnvironmentalObject::draw()
 {
     if (!isVisible || !m_initialized) return;
 
-    if (!m_transforms.empty()) {
-        DrawMeshInstanced(m_rockMesh, m_material, m_transforms.data(), m_instanceCount);
+    float cullDist2 = m_cullDistance * m_cullDistance;
+
+    for (auto &patch : m_patches) {
+        if (patch.transforms.empty()) continue;
+
+        // Filtra le istanze visibili entro la distanza di culling
+        m_visibleBuffer.clear();
+        for (auto &t : patch.transforms) {
+            float dx = t.m12 - m_cameraPos.x;
+            float dz = t.m14 - m_cameraPos.z;
+            if ((dx * dx + dz * dz) <= cullDist2) {
+                m_visibleBuffer.push_back(t);
+            }
+        }
+
+        if (!m_visibleBuffer.empty()) {
+            DrawMeshInstanced(patch.mesh, patch.material,
+                              m_visibleBuffer.data(), (int)m_visibleBuffer.size());
+        }
     }
 }
 
@@ -253,17 +314,15 @@ void EnvironmentalObject::gui()
 {
     ImGui::PushID(this);
     if (ImGui::CollapsingHeader("Rocks (Instanced)")) {
-        ImGui::Text("Instances: %d", m_instanceCount);
-        ImGui::Text("Mesh: %s", rockMeshTypeName(m_meshType));
-        ImGui::Text("GPU Instancing: Active");
+        ImGui::Text("Total instances: %d", getTotalInstanceCount());
+        ImGui::Text("Patches: %d", (int)m_patches.size());
+        ImGui::Text("Cull distance: %.0f", m_cullDistance);
         ImGui::Checkbox("Visible", &isVisible);
 
-        Color &col = m_material.maps[MATERIAL_MAP_DIFFUSE].color;
-        float color[3] = {col.r / 255.0f, col.g / 255.0f, col.b / 255.0f};
-        if (ImGui::ColorEdit3("Rock Color", color)) {
-            col.r = (unsigned char)(color[0] * 255.0f);
-            col.g = (unsigned char)(color[1] * 255.0f);
-            col.b = (unsigned char)(color[2] * 255.0f);
+        for (int i = 0; i < (int)m_patches.size(); i++) {
+            auto &p = m_patches[i];
+            ImGui::Text("  [%d] %s: %d instances", i,
+                        rockMeshTypeName(p.meshType), (int)p.transforms.size());
         }
     }
     ImGui::PopID();

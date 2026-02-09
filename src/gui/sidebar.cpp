@@ -450,17 +450,36 @@ namespace moiras
                 Text("Instanced Rocks");
                 Separator();
 
-                Text("Instances: %d", environmentObject->getInstanceCount());
+                Text("Total instances: %d", environmentObject->getTotalInstanceCount());
+                Text("Patches: %d", environmentObject->getPatchCount());
                 Checkbox("Visible##rocks", &environmentObject->isVisible);
 
+                // Cull distance
+                float cullDist = environmentObject->getCullDistance();
+                if (SliderFloat("Cull Distance", &cullDist, 20.0f, 500.0f))
+                {
+                    environmentObject->setCullDistance(cullDist);
+                }
+
+                // Patch info
+                for (int i = 0; i < environmentObject->getPatchCount(); i++)
+                {
+                    auto &p = environmentObject->getPatch(i);
+                    bool isActive = (i == environmentObject->getActivePatch());
+                    if (isActive) PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
+                    Text("  [%d] %s: %d", i, rockMeshTypeName(p.meshType), (int)p.transforms.size());
+                    if (isActive) PopStyleColor();
+                }
+
                 Spacing();
-                Text("Rock Mesh Type:");
-                int currentType = (int)environmentObject->getMeshType();
+                Separator();
+                Text("Active Brush Mesh:");
+                int currentType = (int)environmentObject->getActiveMeshType();
                 for (int i = 0; i < (int)RockMeshType::COUNT; i++)
                 {
                     if (RadioButton(rockMeshTypeName((RockMeshType)i), &currentType, i))
                     {
-                        environmentObject->setMeshType((RockMeshType)i);
+                        environmentObject->setActiveMeshType((RockMeshType)i);
                     }
                 }
 

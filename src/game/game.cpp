@@ -159,12 +159,13 @@ namespace moiras
     Character::setSharedShader(celShader);
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
 
-    // Genera rocce instanziate sulla mappa
+    // Genera rocce instanziate sulla mappa (patch multipli con mesh diverse)
     if (mapPtr && mapPtr->model.meshCount > 0)
     {
       renderLoadingFrame("Generazione rocce...", 0.90f);
-      auto rocks = std::make_unique<EnvironmentalObject>(500, 1.0f, 200.0f);
-      rocks->generate(mapPtr->model);
+      auto rocks = std::make_unique<EnvironmentalObject>(1.0f, 200.0f);
+      rocks->generate(mapPtr->model, 300, RockMeshType::CUBE);
+      rocks->generate(mapPtr->model, 200, RockMeshType::SPHERE);
       auto *rocksPtr = rocks.get();
       root.addChild(std::move(rocks));
       if (sidebar)
@@ -347,6 +348,11 @@ namespace moiras
       lightmanager.updateCameraPosition(camera->rcamera.position);
       lightmanager.updateAllLights();
 
+      // Aggiorna posizione camera per culling rocce
+      if (rocks) {
+        rocks->updateCameraPos(camera->rcamera.position);
+      }
+
       // Update cel shader uniforms needed for CSM shadow mapping
       {
         float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
@@ -405,14 +411,13 @@ namespace moiras
               }
             }
 
-            // Instanced rocks shadow pass
-            auto *rocks = root.getChildOfType<EnvironmentalObject>();
-            if (rocks && rocks->isVisible && rocks->getInstanceCount() > 0)
-            {
-              const auto &transforms = rocks->getTransforms();
-              for (int t = 0; t < rocks->getInstanceCount(); t++)
-              {
-                DrawMesh(rocks->getMesh(), shadowMat, transforms[t]);
+            // Instanced rocks shadow pass (per-patch)
+            if (rocks && rocks->isVisible) {
+              for (int p = 0; p < rocks->getPatchCount(); p++) {
+                auto &patch = rocks->getPatch(p);
+                for (auto &t : patch.transforms) {
+                  DrawMesh(patch.mesh, shadowMat, t);
+                }
               }
             }
 

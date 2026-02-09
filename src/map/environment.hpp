@@ -12,6 +12,7 @@ enum class RockMeshType {
     HEMISPHERE,
     CYLINDER,
     CONE,
+    CUSTOM,
     COUNT
 };
 
@@ -19,6 +20,7 @@ struct RockPatch {
     Mesh mesh;
     Material material;
     RockMeshType meshType;
+    std::string customName; // nome file per patch CUSTOM
     std::vector<Matrix> transforms;
 
     RockPatch() : mesh{0}, material{0}, meshType(RockMeshType::CUBE) {}
@@ -44,6 +46,9 @@ private:
     float m_brushRadius;
     int m_brushDensity;
     int m_activePatch;
+
+    // Model file list per sidebar
+    std::vector<std::string> m_modelFiles;
 
     Mesh generateMesh(RockMeshType type, float size);
     void loadShader();
@@ -79,6 +84,11 @@ public:
     RockMeshType getActiveMeshType() const;
     void setActiveMeshType(RockMeshType type);
     int addPatch(RockMeshType type);
+    int addPatchFromModel(const std::string &modelPath);
+
+    // Model files
+    void scanModelFiles();
+    const std::vector<std::string> &getModelFiles() const { return m_modelFiles; }
 
     void draw() override;
     void gui() override;
@@ -87,5 +97,6 @@ public:
 };
 
 const char *rockMeshTypeName(RockMeshType type);
+const char *patchDisplayName(const RockPatch &patch);
 
 } // namespace moiras

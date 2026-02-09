@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <algorithm>
+#include <filesystem>
 
 namespace moiras {
 
@@ -17,8 +18,17 @@ const char *rockMeshTypeName(RockMeshType type)
         case RockMeshType::HEMISPHERE: return "Hemisphere";
         case RockMeshType::CYLINDER:   return "Cylinder";
         case RockMeshType::CONE:       return "Cone";
+        case RockMeshType::CUSTOM:     return "Custom";
         default:                       return "Unknown";
     }
+}
+
+const char *patchDisplayName(const RockPatch &patch)
+{
+    if (patch.meshType == RockMeshType::CUSTOM && !patch.customName.empty()) {
+        return patch.customName.c_str();
+    }
+    return rockMeshTypeName(patch.meshType);
 }
 
 EnvironmentalObject::EnvironmentalObject(float rockSize, float spawnRadius)
@@ -36,6 +46,7 @@ EnvironmentalObject::EnvironmentalObject(float rockSize, float spawnRadius)
       m_brushDensity(5),
       m_activePatch(0)
 {
+    scanModelFiles();
 }
 
 EnvironmentalObject::~EnvironmentalObject()
@@ -79,8 +90,37 @@ void EnvironmentalObject::loadShader()
     m_shaderLoaded = true;
 }
 
+void EnvironmentalObject::scanModelFiles()
+{
+    m_modelFiles.clear();
+    std::string assetsPath = "../assets/";
+
+    try {
+        if (!std::filesystem::exists(assetsPath)) return;
+
+        for (const auto &entry : std::filesystem::recursive_directory_iterator(assetsPath)) {
+            if (!entry.is_regular_file()) continue;
+            std::string ext = entry.path().extension().string();
+            for (auto &c : ext) c = tolower(c);
+
+            if (ext == ".glb" || ext == ".obj" || ext == ".fbx" || ext == ".gltf") {
+                // Percorso relativo da assets/
+                std::string relPath = entry.path().string();
+                m_modelFiles.push_back(relPath);
+            }
+        }
+
+        std::sort(m_modelFiles.begin(), m_modelFiles.end());
+    } catch (const std::filesystem::filesystem_error &) {
+        // Directory non accessibile
+    }
+}
+
 int EnvironmentalObject::findOrCreatePatch(RockMeshType type)
 {
+    // Non cercare patch CUSTOM per tipo, solo per primitivi
+    if (type == RockMeshType::CUSTOM) return -1;
+
     for (int i = 0; i < (int)m_patches.size(); i++) {
         if (m_patches[i].meshType == type) return i;
     }
@@ -97,7 +137,6 @@ int EnvironmentalObject::addPatch(RockMeshType type)
     patch.material = LoadMaterialDefault();
     patch.material.shader = m_instancingShader;
 
-    // Colori diversi per patch per distinguerli visivamente
     Color colors[] = {
         {180, 210, 50, 255},   // giallo-verde (cube)
         {100, 180, 220, 255},  // azzurro (sphere)
@@ -115,12 +154,84 @@ int EnvironmentalObject::addPatch(RockMeshType type)
     return idx;
 }
 
+int EnvironmentalObject::addPatchFromModel(const std::string &modelPath)
+{
+    loadShader();
+
+    Model model = LoadModel(modelPath.c_str());
+    if (model.meshCount == 0) {
+        TraceLog(LOG_WARNING, "Rocks: Failed to load model %s", modelPath.c_str());
+        UnloadModel(model);
+        return -1;
+    }
+
+    // Copia la prima mesh del modello
+    // Raylib non ha un "copy mesh" diretto, quindi usiamo GenMeshCopy
+    // via upload: prendiamo i dati dalla mesh caricata
+    Mesh srcMesh = model.meshes[0];
+
+    // Alloca una nuova mesh copiando i dati vertex
+    Mesh mesh = {0};
+    mesh.vertexCount = srcMesh.vertexCount;
+    mesh.triangleCount = srcMesh.triangleCount;
+
+    mesh.vertices = (float *)RL_MALLOC(mesh.vertexCount * 3 * sizeof(float));
+    memcpy(mesh.vertices, srcMesh.vertices, mesh.vertexCount * 3 * sizeof(float));
+
+    if (srcMesh.texcoords) {
+        mesh.texcoords = (float *)RL_MALLOC(mesh.vertexCount * 2 * sizeof(float));
+        memcpy(mesh.texcoords, srcMesh.texcoords, mesh.vertexCount * 2 * sizeof(float));
+    }
+
+    if (srcMesh.normals) {
+        mesh.normals = (float *)RL_MALLOC(mesh.vertexCount * 3 * sizeof(float));
+        memcpy(mesh.normals, srcMesh.normals, mesh.vertexCount * 3 * sizeof(float));
+    }
+
+    if (srcMesh.indices) {
+        mesh.indices = (unsigned short *)RL_MALLOC(mesh.triangleCount * 3 * sizeof(unsigned short));
+        memcpy(mesh.indices, srcMesh.indices, mesh.triangleCount * 3 * sizeof(unsigned short));
+    }
+
+    UploadMesh(&mesh, false);
+
+    // Estrai il nome del file
+    std::filesystem::path p(modelPath);
+    std::string fileName = p.stem().string();
+
+    RockPatch patch;
+    patch.meshType = RockMeshType::CUSTOM;
+    patch.customName = fileName;
+    patch.mesh = mesh;
+    patch.material = LoadMaterialDefault();
+    patch.material.shader = m_instancingShader;
+    patch.material.maps[MATERIAL_MAP_DIFFUSE].color = {220, 220, 220, 255};
+
+    // Se il modello ha texture, copiale nel material
+    if (model.materialCount > 0 && model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture.id != 0) {
+        patch.material.maps[MATERIAL_MAP_DIFFUSE].texture =
+            model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture;
+        // Non fare UnloadModel perche' scaricherebbe la texture
+        // Libera solo le mesh (tranne la prima che abbiamo copiato) e il model struct
+    }
+
+    UnloadModel(model);
+
+    m_patches.push_back(std::move(patch));
+    int idx = (int)m_patches.size() - 1;
+
+    TraceLog(LOG_INFO, "Rocks: Created custom patch %d from %s (%d verts)",
+             idx, fileName.c_str(), mesh.vertexCount);
+    return idx;
+}
+
 void EnvironmentalObject::generate(const Model &terrain, int count, RockMeshType type)
 {
     m_terrain = &terrain;
     m_initialized = true;
 
     int patchIdx = findOrCreatePatch(type);
+    if (patchIdx < 0) return;
     auto &patch = m_patches[patchIdx];
 
     BoundingBox bounds = GetMeshBoundingBox(terrain.meshes[0]);
@@ -197,8 +308,9 @@ RockMeshType EnvironmentalObject::getActiveMeshType() const
 
 void EnvironmentalObject::setActiveMeshType(RockMeshType type)
 {
+    if (type == RockMeshType::CUSTOM) return; // Usa addPatchFromModel
     int idx = findOrCreatePatch(type);
-    m_activePatch = idx;
+    if (idx >= 0) m_activePatch = idx;
 }
 
 void EnvironmentalObject::paintAt(Vector3 center)
@@ -255,7 +367,6 @@ void EnvironmentalObject::eraseAt(Vector3 center)
 
     float r2 = m_brushRadius * m_brushRadius;
 
-    // Cancella da tutti i patch nel raggio
     for (auto &patch : m_patches) {
         patch.transforms.erase(
             std::remove_if(patch.transforms.begin(), patch.transforms.end(),
@@ -293,7 +404,6 @@ void EnvironmentalObject::draw()
     for (auto &patch : m_patches) {
         if (patch.transforms.empty()) continue;
 
-        // Filtra le istanze visibili entro la distanza di culling
         m_visibleBuffer.clear();
         for (auto &t : patch.transforms) {
             float dx = t.m12 - m_cameraPos.x;
@@ -322,7 +432,7 @@ void EnvironmentalObject::gui()
         for (int i = 0; i < (int)m_patches.size(); i++) {
             auto &p = m_patches[i];
             ImGui::Text("  [%d] %s: %d instances", i,
-                        rockMeshTypeName(p.meshType), (int)p.transforms.size());
+                        patchDisplayName(p), (int)p.transforms.size());
         }
     }
     ImGui::PopID();

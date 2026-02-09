@@ -9,6 +9,7 @@
 #include "../building/structure_builder.h"
 #include "../building/structure.h"
 #include "../gui/script_editor.h"
+#include "../map/environment.hpp"
 #include "game_object.h"
 #include <memory>
 #include <raylib.h>

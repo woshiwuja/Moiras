@@ -166,6 +166,9 @@ add_executable(
     # Time management
     src/time/time_manager.cpp
     src/time/time_manager.h
+    # Environment (GPU instanced rocks)
+    src/map/environment.hpp
+    src/map/environment.cpp
 )
 
 target_include_directories(Moiras PUBLIC

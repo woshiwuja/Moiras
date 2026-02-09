@@ -7,6 +7,7 @@
 #include "../gui/script_editor.h"
 #include "../input/input_manager.h"
 #include "../time/time_manager.h"
+#include "../map/environment.hpp"
 #include "../src/audio/audiodevice.hpp"
 #include "../scripting/ScriptEngine.hpp"
 #include "../scripting/ScriptComponent.hpp"
@@ -156,6 +157,17 @@ namespace moiras
     lightmanager.addLight(light2Ptr);
     Character::setSharedShader(celShader);
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
+
+    // Genera rocce instanziate sulla mappa
+    if (mapPtr && mapPtr->model.meshCount > 0) {
+      renderLoadingFrame("Generazione rocce...", 0.90f);
+      auto rocks = std::make_unique<EnvironmentalObject>(500, 1.0f, 200.0f);
+      rocks->generate(mapPtr->model);
+      rocks->setShader(lightmanager.getShader());
+      root.addChild(std::move(rocks));
+      TraceLog(LOG_INFO, "Instanced rocks added to scene");
+    }
+
     renderLoadingFrame("Caricamento personaggio...", 0.92f);
     auto player = std::make_unique<Character>();
     player->name = "Player";
@@ -365,6 +377,15 @@ namespace moiras
                   MatrixTranslate(map->position.x, map->position.y, map->position.z));
               for (int i = 0; i < map->model.meshCount; i++) {
                 DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
+              }
+            }
+
+            // Instanced rocks shadow pass
+            auto *rocks = root.getChildOfType<EnvironmentalObject>();
+            if (rocks && rocks->isVisible && rocks->getInstanceCount() > 0) {
+              const auto &transforms = rocks->getTransforms();
+              for (int t = 0; t < rocks->getInstanceCount(); t++) {
+                DrawMesh(rocks->getMesh(), shadowMat, transforms[t]);
               }
             }
 

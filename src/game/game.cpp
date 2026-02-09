@@ -163,7 +163,6 @@ namespace moiras
       renderLoadingFrame("Generazione rocce...", 0.90f);
       auto rocks = std::make_unique<EnvironmentalObject>(500, 1.0f, 200.0f);
       rocks->generate(mapPtr->model);
-      rocks->setShader(lightmanager.getShader());
       auto *rocksPtr = rocks.get();
       root.addChild(std::move(rocks));
       if (sidebar) {

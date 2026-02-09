@@ -78,11 +78,7 @@ void EnvironmentalObject::generate(const Model &terrain)
     m_rockMesh = generateMesh(m_meshType, m_rockSize);
 
     m_material = LoadMaterialDefault();
-    m_material.maps[MATERIAL_MAP_DIFFUSE].color = {120, 110, 100, 255};
-
-    if (m_hasShader) {
-        m_material.shader = m_currentShader;
-    }
+    m_material.maps[MATERIAL_MAP_DIFFUSE].color = {180, 210, 50, 255};
 
     BoundingBox bounds = GetMeshBoundingBox(terrain.meshes[0]);
     Vector3 boundsMin = Vector3Transform(bounds.min, terrain.transform);
@@ -145,11 +141,8 @@ void EnvironmentalObject::generate(const Model &terrain)
 
 void EnvironmentalObject::setShader(Shader shader)
 {
-    m_currentShader = shader;
-    m_hasShader = true;
-    if (m_initialized) {
-        m_material.shader = shader;
-    }
+    // No-op: usa materiale default per debug
+    (void)shader;
 }
 
 void EnvironmentalObject::setMeshType(RockMeshType type)

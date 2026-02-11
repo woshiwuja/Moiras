@@ -1,9 +1,11 @@
 // filepicker.cpp
 #include "sidebar.h"
 #include "../building/structure_builder.h"
+#include "../map/environment.hpp"
 #include "../time/time_manager.h"
 #include "script_editor.h"
 #include "../../rlImGui/rlImGui.h"
+#include <filesystem>
 
 using namespace ImGui;
 namespace moiras
@@ -439,6 +441,163 @@ namespace moiras
             if (this->lightManager != nullptr)
             {
                 Checkbox("Shadows", &this->lightManager->shadowsEnabled);
+            }
+        }
+
+        if (CollapsingHeader("Environment"))
+        {
+            if (environmentObject)
+            {
+                Text("Instanced Rocks");
+                Separator();
+
+                Text("Total instances: %d", environmentObject->getTotalInstanceCount());
+                Text("Patches: %d", environmentObject->getPatchCount());
+                Checkbox("Visible##rocks", &environmentObject->isVisible);
+
+                // Cull distance
+                float cullDist = environmentObject->getCullDistance();
+                if (SliderFloat("Cull Distance", &cullDist, 20.0f, 500.0f))
+                {
+                    environmentObject->setCullDistance(cullDist);
+                }
+
+                // Patch info
+                for (int i = 0; i < environmentObject->getPatchCount(); i++)
+                {
+                    auto &p = environmentObject->getPatch(i);
+                    bool isActive = (i == environmentObject->getActivePatch());
+                    if (isActive) PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
+                    Text("  [%d] %s: %d", i, patchDisplayName(p), (int)p.transforms.size());
+                    if (isActive) PopStyleColor();
+                    // Allow clicking a patch to set it active
+                    if (IsItemHovered() && IsMouseClicked(0)) {
+                        environmentObject->setActivePatch(i);
+                    }
+                }
+
+                Spacing();
+                Separator();
+                Text("Active Brush Mesh:");
+
+                // Primitive mesh types
+                int currentType = (int)environmentObject->getActiveMeshType();
+                for (int i = 0; i < (int)RockMeshType::CUSTOM; i++)
+                {
+                    if (RadioButton(rockMeshTypeName((RockMeshType)i), &currentType, i))
+                    {
+                        environmentObject->setActiveMeshType((RockMeshType)i);
+                    }
+                }
+
+                // Custom model patches (show as radio buttons too)
+                for (int i = 0; i < environmentObject->getPatchCount(); i++)
+                {
+                    auto &p = environmentObject->getPatch(i);
+                    if (p.meshType != RockMeshType::CUSTOM) continue;
+                    bool isActive = (i == environmentObject->getActivePatch());
+                    char label[128];
+                    snprintf(label, sizeof(label), "%s##custpatch%d", patchDisplayName(p), i);
+                    if (RadioButton(label, isActive))
+                    {
+                        environmentObject->setActivePatch(i);
+                    }
+                }
+
+                Spacing();
+                Separator();
+                Text("Load Custom Model:");
+
+                // Model file combo
+                const auto &modelFiles = environmentObject->getModelFiles();
+                static int selectedModelIdx = 0;
+                if (!modelFiles.empty())
+                {
+                    if (selectedModelIdx >= (int)modelFiles.size())
+                        selectedModelIdx = 0;
+
+                    if (BeginCombo("##ModelFile", modelFiles[selectedModelIdx].c_str()))
+                    {
+                        for (int i = 0; i < (int)modelFiles.size(); i++)
+                        {
+                            // Show just the filename for readability
+                            std::filesystem::path fp(modelFiles[i]);
+                            std::string display = fp.filename().string();
+                            bool sel = (i == selectedModelIdx);
+                            if (Selectable(display.c_str(), sel))
+                            {
+                                selectedModelIdx = i;
+                            }
+                            if (sel) SetItemDefaultFocus();
+                            if (IsItemHovered())
+                            {
+                                SetTooltip("%s", modelFiles[i].c_str());
+                            }
+                        }
+                        EndCombo();
+                    }
+
+                    if (Button("Add as Patch", ImVec2(-1, 0)))
+                    {
+                        int idx = environmentObject->addPatchFromModel(modelFiles[selectedModelIdx]);
+                        if (idx >= 0) {
+                            environmentObject->setActivePatch(idx);
+                        }
+                    }
+                }
+                else
+                {
+                    TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No model files found");
+                }
+
+                if (Button("Refresh Models", ImVec2(-1, 0)))
+                {
+                    environmentObject->scanModelFiles();
+                }
+
+                Spacing();
+                Separator();
+                Text("Brush Tool");
+                Spacing();
+
+                bool brushActive = environmentObject->isBrushMode();
+                if (brushActive) {
+                    PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+                }
+                if (Button(brushActive ? "Brush: ON" : "Brush: OFF", ImVec2(-1, 30)))
+                {
+                    environmentObject->setBrushMode(!brushActive);
+                }
+                if (brushActive) {
+                    PopStyleColor();
+                }
+
+                if (brushActive) {
+                    TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Left Click: Paint");
+                    TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Right Click: Erase");
+                }
+
+                float brushRadius = environmentObject->getBrushRadius();
+                if (SliderFloat("Brush Radius", &brushRadius, 2.0f, 50.0f))
+                {
+                    environmentObject->setBrushRadius(brushRadius);
+                }
+
+                int brushDensity = environmentObject->getBrushDensity();
+                if (SliderInt("Brush Density", &brushDensity, 1, 30))
+                {
+                    environmentObject->setBrushDensity(brushDensity);
+                }
+
+                Spacing();
+                if (Button("Clear All Rocks", ImVec2(-1, 0)))
+                {
+                    environmentObject->clearAll();
+                }
+            }
+            else
+            {
+                TextColored(ImVec4(1, 0.5f, 0, 1), "EnvironmentalObject not set");
             }
         }
 

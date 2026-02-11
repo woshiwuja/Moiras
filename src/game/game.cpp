@@ -7,6 +7,7 @@
 #include "../gui/script_editor.h"
 #include "../input/input_manager.h"
 #include "../time/time_manager.h"
+#include "../map/environment.hpp"
 #include "../src/audio/audiodevice.hpp"
 #include "../scripting/ScriptEngine.hpp"
 #include "../scripting/ScriptComponent.hpp"
@@ -40,7 +41,7 @@ namespace moiras
 
     renderLoadingFrame("Caricamento mappa...", 0.10f);
 
-    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map2.glb");
+    std::unique_ptr<Map> map = moiras::mapFromModel("../assets/map.glb");
 
     SetTextureFilter(map->model.materials[0].maps->texture,
                      TEXTURE_FILTER_ANISOTROPIC_8X);
@@ -63,25 +64,26 @@ namespace moiras
       sidebar->outlineEnabled = &this->outlineEnabled;
       TraceLog(LOG_INFO, "LightManager and ModelManager linked to Sidebar");
     }
-    
+
     // Create script editor as child of GUI
     auto scriptEditorPtr = std::make_unique<ScriptEditor>();
     scriptEditor = scriptEditorPtr.get();
     scriptEditor->setOpen(false); // Start closed, can be toggled with F12
     gui->addChild(std::move(scriptEditorPtr));
-    
+
     // Link script editor to sidebar
-    if (sidebar) {
+    if (sidebar)
+    {
       sidebar->scriptEditor = scriptEditor;
     }
-    
+
     TraceLog(LOG_INFO, "Script Editor initialized (press F12 to open)");
     renderLoadingFrame("Caricamento audio...", 0.30f);
 
     auto audioManager = std::make_unique<AudioManager>();
     audioManager->setVolume(0.3);
     audioManager->loadMusicFolder("../assets/audio/music");
-    //audioManager->loadMusic("../assets/audio/music/Desert.mp3");
+    // audioManager->loadMusic("../assets/audio/music/Desert.mp3");
     audioManager->playMusic("Desert");
     registerObject(audioManager->id, audioManager.get());
     root.addChild(std::move(audioManager));
@@ -142,13 +144,13 @@ namespace moiras
       }
 
       renderLoadingFrame("Costruzione NavMesh...", 0.50f);
-      mapPtr->buildNavMesh([this](int current, int total) {
+      mapPtr->buildNavMesh([this](int current, int total)
+                           {
         float navProgress = (float)current / (float)total;
         float overallProgress = 0.50f + navProgress * 0.40f;
         char msg[128];
         snprintf(msg, sizeof(msg), "Costruzione NavMesh... (tile %d/%d)", current, total);
-        renderLoadingFrame(msg, overallProgress);
-      });
+        renderLoadingFrame(msg, overallProgress); });
       TraceLog(LOG_INFO, "Shader assigned, ID: %d",
                mapPtr->model.materials[0].shader.id);
     }
@@ -156,6 +158,23 @@ namespace moiras
     lightmanager.addLight(light2Ptr);
     Character::setSharedShader(celShader);
     TraceLog(LOG_INFO, "Added %d lights to manager", 2);
+
+    // Genera rocce instanziate sulla mappa (patch multipli con mesh diverse)
+    if (mapPtr && mapPtr->model.meshCount > 0)
+    {
+      renderLoadingFrame("Generazione rocce...", 0.90f);
+      auto rocks = std::make_unique<EnvironmentalObject>(1.0f, 200.0f);
+      rocks->generate(mapPtr->model, 300, RockMeshType::CUBE);
+      rocks->generate(mapPtr->model, 200, RockMeshType::SPHERE);
+      auto *rocksPtr = rocks.get();
+      root.addChild(std::move(rocks));
+      if (sidebar)
+      {
+        sidebar->environmentObject = rocksPtr;
+      }
+      TraceLog(LOG_INFO, "Instanced rocks added to scene");
+    }
+
     renderLoadingFrame("Caricamento personaggio...", 0.92f);
     auto player = std::make_unique<Character>();
     player->name = "Player";
@@ -190,7 +209,7 @@ namespace moiras
     renderLoadingFrame("Inizializzazione ombre...", 0.96f);
     lightmanager.registerShadowShader(celShader);
     lightmanager.setupShadowMap("../assets/shaders/shadow_depth.vs",
-                                 "../assets/shaders/shadow_depth.fs");
+                                "../assets/shaders/shadow_depth.fs");
     renderLoadingFrame("Pronto!", 1.0f);
     TraceLog(LOG_INFO, "SCRIPTING: Lua scripting system ready");
   }
@@ -252,44 +271,53 @@ namespace moiras
     {
       // Update TimeManager first (caches delta time for the frame)
       TimeManager::getInstance().update();
-      
+
       // Update input manager and set context based on game state
-      InputManager& input = InputManager::getInstance();
-      
+      InputManager &input = InputManager::getInstance();
+
       // Determine current context
-      if (scriptEditor && scriptEditor->isOpen()) {
+      if (scriptEditor && scriptEditor->isOpen())
+      {
         input.setContext(InputContext::UI);
-      } else if (structureBuilder && structureBuilder->isBuildingMode()) {
+      }
+      else if (structureBuilder && structureBuilder->isBuildingMode())
+      {
         input.setContext(InputContext::BUILDING);
-      } else {
+      }
+      else
+      {
         input.setContext(InputContext::GAME);
       }
-      
+
       // Update input state (must be called before any input queries)
       input.update();
-      
+
       // Handle pause toggle (works in any context)
-      if (input.isActionJustPressed(InputAction::UI_TOGGLE_PAUSE)) {
+      if (input.isActionJustPressed(InputAction::UI_TOGGLE_PAUSE))
+      {
         TimeManager::getInstance().togglePause();
       }
-      
+
       // Handle speed changes (works in any context)
-      if (input.isActionJustPressed(InputAction::UI_SPEED_NORMAL)) {
+      if (input.isActionJustPressed(InputAction::UI_SPEED_NORMAL))
+      {
         TimeManager::getInstance().setTimeScale(1.0f);
       }
-      if (input.isActionJustPressed(InputAction::UI_SPEED_MEDIUM)) {
+      if (input.isActionJustPressed(InputAction::UI_SPEED_MEDIUM))
+      {
         TimeManager::getInstance().setTimeScale(2.5f);
       }
-      if (input.isActionJustPressed(InputAction::UI_SPEED_FAST)) {
+      if (input.isActionJustPressed(InputAction::UI_SPEED_FAST))
+      {
         TimeManager::getInstance().setTimeScale(5.0f);
       }
-      
+
       // Toggle script editor with F12 (always works)
       if (input.isActionJustPressed(InputAction::UI_TOGGLE_SCRIPT_EDITOR) && scriptEditor)
       {
         scriptEditor->setOpen(!scriptEditor->isOpen());
       }
-      
+
       root.update();
 
       // Hot-reload check every 60 frames (~1 second at 60fps)
@@ -306,10 +334,12 @@ namespace moiras
       auto camera = root.getChildOfType<GameCamera>();
       auto map = root.getChildOfType<Map>();
 
-      // Aggiorna il player controller (solo se non siamo in building mode)
+      // Aggiorna il player controller (solo se non siamo in building mode o brush mode)
+      auto *rocks = root.getChildOfType<EnvironmentalObject>();
       bool inBuildingMode =
           (structureBuilder && structureBuilder->isBuildingMode());
-      if (playerController && camera && !inBuildingMode)
+      bool inBrushMode = (rocks && rocks->isBrushMode());
+      if (playerController && camera && !inBuildingMode && !inBrushMode)
       {
         playerController->update(camera);
       }
@@ -318,15 +348,22 @@ namespace moiras
       lightmanager.updateCameraPosition(camera->rcamera.position);
       lightmanager.updateAllLights();
 
+      // Aggiorna posizione camera per culling rocce
+      if (rocks) {
+        rocks->updateCameraPos(camera->rcamera.position);
+      }
+
       // Update cel shader uniforms needed for CSM shadow mapping
       {
         float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
         SetShaderValue(celShader, GetShaderLocation(celShader, "viewPos"), camPos, SHADER_UNIFORM_VEC3);
 
         // Set light position from first directional light for cel shading
-        for (int i = 0; i < MAX_LIGHTS; i++) {
+        for (int i = 0; i < MAX_LIGHTS; i++)
+        {
           if (lightmanager.lights[i] && lightmanager.lights[i]->enabled &&
-              lightmanager.lights[i]->getType() == LightType::DIRECTIONAL) {
+              lightmanager.lights[i]->getType() == LightType::DIRECTIONAL)
+          {
             float lpos[3] = {lightmanager.lights[i]->position.x,
                              lightmanager.lights[i]->position.y,
                              lightmanager.lights[i]->position.z};
@@ -337,17 +374,20 @@ namespace moiras
       }
 
       // Update sea shader camera position
-      if (map && map->seaShaderLoaded.id > 0 && map->seaViewPosLoc >= 0) {
+      if (map && map->seaShaderLoaded.id > 0 && map->seaViewPosLoc >= 0)
+      {
         float camPos[3] = {camera->rcamera.position.x, camera->rcamera.position.y, camera->rcamera.position.z};
         SetShaderValue(map->seaShaderLoaded, map->seaViewPosLoc, camPos, SHADER_UNIFORM_VEC3);
       }
 
       // Shadow pass: render depth from light's perspective using CSM
-      if (lightmanager.areShadowsEnabled()) {
+      if (lightmanager.areShadowsEnabled())
+      {
         lightmanager.shadowFrameCounter++;
         bool shouldUpdateShadow = (lightmanager.shadowFrameCounter % lightmanager.shadowUpdateInterval) == 0;
 
-        if (shouldUpdateShadow) {
+        if (shouldUpdateShadow)
+        {
           float aspect = (float)GetScreenWidth() / (float)GetScreenHeight();
           lightmanager.updateCascadeMatrices(camera->rcamera, nearPlane, aspect);
 
@@ -356,15 +396,28 @@ namespace moiras
           Material shadowMat = lightmanager.getShadowMaterial();
 
           // Render all shadow casters into each cascade
-          for (int c = 0; c < NUM_CASCADES; c++) {
+          for (int c = 0; c < NUM_CASCADES; c++)
+          {
             lightmanager.setCascade(c);
 
             // Map terrain
-            if (map && map->model.meshCount > 0) {
+            if (map && map->model.meshCount > 0)
+            {
               Matrix mapTransform = MatrixMultiply(map->model.transform,
-                  MatrixTranslate(map->position.x, map->position.y, map->position.z));
-              for (int i = 0; i < map->model.meshCount; i++) {
+                                                   MatrixTranslate(map->position.x, map->position.y, map->position.z));
+              for (int i = 0; i < map->model.meshCount; i++)
+              {
                 DrawMesh(map->model.meshes[i], shadowMat, mapTransform);
+              }
+            }
+
+            // Instanced rocks shadow pass (per-patch)
+            if (rocks && rocks->isVisible) {
+              for (int p = 0; p < rocks->getPatchCount(); p++) {
+                auto &patch = rocks->getPatch(p);
+                for (auto &t : patch.transforms) {
+                  DrawMesh(patch.mesh, shadowMat, t);
+                }
               }
             }
 
@@ -408,12 +461,31 @@ namespace moiras
 
       if (closest.hit)
       {
-        DrawCube(closest.point, 0.3f, 0.3f, 0.3f, ORANGE);
-        Vector3 normalEnd;
-        normalEnd.x = closest.point.x + closest.normal.x;
-        normalEnd.y = closest.point.y + closest.normal.y;
-        normalEnd.z = closest.point.z + closest.normal.z;
-        DrawLine3D(closest.point, normalEnd, RED);
+        // Brush mode: anteprima cerchio e input paint/erase
+        if (inBrushMode && rocks)
+        {
+          float brushR = rocks->getBrushRadius();
+          DrawCircle3D(closest.point, brushR,
+                       {1.0f, 0.0f, 0.0f}, 90.0f, {0, 200, 0, 180});
+
+          if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+          {
+            rocks->paintAt(closest.point);
+          }
+          if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
+          {
+            rocks->eraseAt(closest.point);
+          }
+        }
+        else
+        {
+          DrawCube(closest.point, 0.3f, 0.3f, 0.3f, ORANGE);
+          Vector3 normalEnd;
+          normalEnd.x = closest.point.x + closest.normal.x;
+          normalEnd.y = closest.point.y + closest.normal.y;
+          normalEnd.z = closest.point.z + closest.normal.z;
+          DrawLine3D(closest.point, normalEnd, RED);
+        }
       }
 
       camera->endMode3D();
@@ -472,7 +544,8 @@ namespace moiras
 
   void Game::drawShadowCastersRecursive(GameObject *obj, Material &shadowMat)
   {
-    if (!obj) return;
+    if (!obj)
+      return;
 
     // Characters
     if (auto *character = dynamic_cast<Character *>(obj))

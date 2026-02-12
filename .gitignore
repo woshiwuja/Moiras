@@ -5,4 +5,5 @@ CMakeCache.txt
 .cache/
 *.glb
 *.obj
-*.pngexternal/filament/
+*.png
+external/filament/

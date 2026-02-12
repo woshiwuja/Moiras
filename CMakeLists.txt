@@ -28,19 +28,19 @@ set(USE_F16C ON)
 set(USE_FMADD ON)
 set(CMAKE_CXX_STANDARD 20)
 
-# Fetch Raylib
-FetchContent_Declare(
-    raylib
-    GIT_REPOSITORY https://github.com/raysan5/raylib.git
-    GIT_TAG 5.5
-)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+# Find SDL2
+find_package(SDL2 REQUIRED)
+include_directories(${SDL2_INCLUDE_DIRS})
 
-# Configura GLFW (nuovo metodo)
-set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(raylib)
+# Setup Filament
+set(FILAMENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/filament")
+if(NOT EXISTS ${FILAMENT_DIR})
+    message(FATAL_ERROR "Filament not found at ${FILAMENT_DIR}. Please run: \n"
+            "cd external/filament && wget https://github.com/google/filament/releases/download/v1.52.0/filament-v1.52.0-linux.tgz && "
+            "tar -xzf filament-v1.52.0-linux.tgz --strip-components=1")
+endif()
+include_directories(${FILAMENT_DIR}/include)
+link_directories(${FILAMENT_DIR}/lib/x86_64)
 
 # Fetch JoltPhysics
 FetchContent_Declare(
@@ -136,10 +136,13 @@ add_executable(
     src/building/structure_builder.cpp
     src/resources/model_manager.h
     src/resources/model_manager.cpp
-    rlImGui/rlImGui.cpp
     src/gui/inventory.hpp
     src/gui/inventory.cpp
-    rlImGui/rlImGui.h
+    # SDL + Filament rendering
+    src/window/sdl_window.h
+    src/window/sdl_window.cpp
+    src/rendering/filament_engine.h
+    src/rendering/filament_engine.cpp
     # Lua scripting system
     src/scripting/ScriptEngine.hpp
     src/scripting/ScriptEngine.cpp
@@ -177,23 +180,47 @@ target_include_directories(Moiras PUBLIC
     ${recastnavigation_SOURCE_DIR}/Detour/Include
     ${recastnavigation_SOURCE_DIR}/DetourCrowd/Include
     ${recastnavigation_SOURCE_DIR}/DetourTileCache/Include
-    raylib/src/
+    ${FILAMENT_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/
-    ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui/
 )
 target_include_directories(Moiras PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui
-    ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui
     ${sol2_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/external/ImGuiColorTextEdit
+    ${SDL2_INCLUDE_DIRS}
 )
 
-# Disable Font Awesome in rlImGui (optional font icons)
-target_compile_definitions(Moiras PRIVATE NO_FONT_AWESOME)
+# Material compilation for Filament
+set(MATC ${FILAMENT_DIR}/bin/matc)
+set(MAT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/materials)
+set(MAT_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/assets/materials)
+
+add_custom_command(
+    OUTPUT ${MAT_OUT_DIR}/pbr.filamat
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MAT_OUT_DIR}
+    COMMAND ${MATC} -a opengl -p mobile
+            -o ${MAT_OUT_DIR}/pbr.filamat
+            ${MAT_SRC_DIR}/pbr.mat
+    DEPENDS ${MAT_SRC_DIR}/pbr.mat
+    COMMENT "Compiling PBR material"
+)
+
+add_custom_target(compile_materials ALL
+    DEPENDS ${MAT_OUT_DIR}/pbr.filamat
+)
+
+add_dependencies(Moiras compile_materials)
 
 target_link_libraries(Moiras
     PRIVATE
-    raylib
+    ${SDL2_LIBRARIES}
+    # Filament libraries (order matters!)
+    filament
+    filamat
+    gltfio_core
+    backend
+    utils
+    # Keep existing
     Jolt
     imgui
     ImGuiColorTextEdit
@@ -202,6 +229,10 @@ target_link_libraries(Moiras
     DetourCrowd
     DetourTileCache
     ${LUA_LIBRARIES}
+    # System libraries needed by Filament
+    GL
+    pthread
+    dl
 )
 
 # Copy scripts to build directory

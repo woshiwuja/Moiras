@@ -1,0 +1,69 @@
+material {
+    name : PBR,
+    shadingModel : lit,
+    parameters : [
+        {
+            type : sampler2d,
+            name : albedoMap
+        },
+        {
+            type : sampler2d,
+            name : normalMap
+        },
+        {
+            type : sampler2d,
+            name : metallicRoughnessMap
+        },
+        {
+            type : float,
+            name : metallicValue,
+            default : 0.0
+        },
+        {
+            type : float,
+            name : roughnessValue,
+            default : 0.5
+        },
+        {
+            type : float,
+            name : aoValue,
+            default : 1.0
+        },
+        {
+            type : float2,
+            name : tiling,
+            default : [1.0, 1.0]
+        },
+        {
+            type : float2,
+            name : offset,
+            default : [0.0, 0.0]
+        }
+    ],
+    requires : [uv0, tangents]
+}
+
+vertex {
+    void materialVertex(inout MaterialVertexInputs material) {
+        // Apply UV tiling and offset
+        material.uv0 = material.uv0 * materialParams.tiling + materialParams.offset;
+    }
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+
+        // Sample textures
+        vec4 albedo = texture(materialParams_albedoMap, getUV0());
+        vec3 normal = texture(materialParams_normalMap, getUV0()).xyz;
+        vec3 mra = texture(materialParams_metallicRoughnessMap, getUV0()).xyz;
+
+        // Apply to material
+        material.baseColor = albedo;
+        material.normal = normal * 2.0 - 1.0;  // Unpack normal
+        material.metallic = mra.r * materialParams.metallicValue;
+        material.roughness = mra.g * materialParams.roughnessValue;
+        material.ambientOcclusion = mra.b * materialParams.aoValue;
+    }
+}

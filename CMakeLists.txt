@@ -110,6 +110,7 @@ add_subdirectory(src)
 add_executable(
     Moiras
     src/main.cpp
+    src/commons/math_types.h
     src/character/character.h
     src/character/character.cpp
     src/character/controller.h
@@ -188,6 +189,7 @@ target_include_directories(Moiras PUBLIC
     ${recastnavigation_SOURCE_DIR}/DetourTileCache/Include
     ${FILAMENT_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/raylib  # Raylib headers for type compatibility
 )
 target_include_directories(Moiras PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui

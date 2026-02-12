@@ -1,6 +1,6 @@
 #pragma once
 #include <memory>
-#include <raylib.h>
+#include <raymath.h>  // For Vector3, Matrix, etc. (math types only, no rendering)
 #include <string>
 #include <utility>
 #include <vector>

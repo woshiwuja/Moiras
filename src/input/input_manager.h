@@ -1,7 +1,9 @@
 #pragma once
 
 #include "input_types.h"
-#include <raylib.h>
+#include "../commons/math_types.h"
+#include <SDL2/SDL.h>
+#include <unordered_map>
 
 namespace moiras {
 
@@ -23,13 +25,21 @@ public:
     bool isActionJustReleased(InputAction action) const; // Just released
     
     // Mouse/input state (respects ImGui capture)
-    Vector2 getMouseDelta() const;
+    Vec2 getMouseDelta() const;
     float getMouseWheelMove() const;
-    Vector2 getMousePosition() const;
-    
+    Vec2 getMousePosition() const;
+
     // Direct ImGui capture state queries
     bool isMouseCapturedByUI() const;
     bool isKeyboardCapturedByUI() const;
+
+    // SDL event handlers (called from SDLWindow::pollEvents)
+    void handleSDLKeyDown(const SDL_KeyboardEvent& event);
+    void handleSDLKeyUp(const SDL_KeyboardEvent& event);
+    void handleSDLMouseMotion(const SDL_MouseMotionEvent& event);
+    void handleSDLMouseButtonDown(const SDL_MouseButtonEvent& event);
+    void handleSDLMouseButtonUp(const SDL_MouseButtonEvent& event);
+    void handleSDLMouseWheel(const SDL_MouseWheelEvent& event);
     
 private:
     InputManager();
@@ -40,7 +50,16 @@ private:
     InputContext m_currentContext;
     bool m_mouseCapture;
     bool m_keyboardCapture;
-    
+
+    // SDL input state tracking
+    std::unordered_map<SDL_Scancode, bool> m_keysCurrent;
+    std::unordered_map<SDL_Scancode, bool> m_keysPrevious;
+    std::unordered_map<Uint8, bool> m_mouseButtonsCurrent;
+    std::unordered_map<Uint8, bool> m_mouseButtonsPrevious;
+    Vec2 m_mousePosition;
+    Vec2 m_mouseDelta;
+    float m_mouseWheelY;
+
     // Check if action is allowed in current context
     bool isActionAvailable(InputAction action) const;
     

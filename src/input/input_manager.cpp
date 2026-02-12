@@ -9,10 +9,13 @@ InputManager& InputManager::getInstance() {
     return instance;
 }
 
-InputManager::InputManager() 
+InputManager::InputManager()
     : m_currentContext(InputContext::GAME)
     , m_mouseCapture(false)
     , m_keyboardCapture(false)
+    , m_mousePosition(0.0f, 0.0f)
+    , m_mouseDelta(0.0f, 0.0f)
+    , m_mouseWheelY(0.0f)
 {
 }
 
@@ -20,6 +23,41 @@ void InputManager::update() {
     // Cache ImGui capture state for this frame
     m_mouseCapture = ImGui::GetIO().WantCaptureMouse;
     m_keyboardCapture = ImGui::GetIO().WantCaptureKeyboard;
+
+    // Swap current and previous state for edge detection
+    m_keysPrevious = m_keysCurrent;
+    m_mouseButtonsPrevious = m_mouseButtonsCurrent;
+
+    // Reset per-frame state
+    m_mouseDelta = Vec2(0.0f, 0.0f);
+    m_mouseWheelY = 0.0f;
+}
+
+// SDL event handlers
+void InputManager::handleSDLKeyDown(const SDL_KeyboardEvent& event) {
+    m_keysCurrent[event.keysym.scancode] = true;
+}
+
+void InputManager::handleSDLKeyUp(const SDL_KeyboardEvent& event) {
+    m_keysCurrent[event.keysym.scancode] = false;
+}
+
+void InputManager::handleSDLMouseMotion(const SDL_MouseMotionEvent& event) {
+    m_mousePosition = Vec2((float)event.x, (float)event.y);
+    m_mouseDelta.x += (float)event.xrel;
+    m_mouseDelta.y += (float)event.yrel;
+}
+
+void InputManager::handleSDLMouseButtonDown(const SDL_MouseButtonEvent& event) {
+    m_mouseButtonsCurrent[event.button] = true;
+}
+
+void InputManager::handleSDLMouseButtonUp(const SDL_MouseButtonEvent& event) {
+    m_mouseButtonsCurrent[event.button] = false;
+}
+
+void InputManager::handleSDLMouseWheel(const SDL_MouseWheelEvent& event) {
+    m_mouseWheelY += (float)event.y;
 }
 
 void InputManager::setContext(InputContext context) {
@@ -31,56 +69,39 @@ InputContext InputManager::getContext() const {
 }
 
 bool InputManager::isActionActive(InputAction action) const {
-    // Check if available in current context
     if (!isActionAvailable(action)) return false;
-    
-    // Check if blocked by ImGui
     if (isActionBlockedByUI(action)) return false;
-    
-    // Get raw state
     return getRawActionState(action);
 }
 
 bool InputManager::isActionJustPressed(InputAction action) const {
-    // Check if available in current context
     if (!isActionAvailable(action)) return false;
-    
-    // Check if blocked by ImGui
     if (isActionBlockedByUI(action)) return false;
-    
-    // Get raw state
     return getRawActionJustPressed(action);
 }
 
 bool InputManager::isActionJustReleased(InputAction action) const {
-    // Check if available in current context
     if (!isActionAvailable(action)) return false;
-    
-    // Check if blocked by ImGui
     if (isActionBlockedByUI(action)) return false;
-    
-    // Get raw state
     return getRawActionJustReleased(action);
 }
 
-Vector2 InputManager::getMouseDelta() const {
-    // If mouse is captured by UI, return zero delta
+Vec2 InputManager::getMouseDelta() const {
     if (m_mouseCapture) {
-        return Vector2{0.0f, 0.0f};
+        return Vec2(0.0f, 0.0f);
     }
-    return GetMouseDelta();
+    return m_mouseDelta;
 }
 
 float InputManager::getMouseWheelMove() const {
-    // If mouse is captured by UI, return zero
     if (m_mouseCapture) {
         return 0.0f;
     }
-    return GetMouseWheelMove();
+    return m_mouseWheelY;
 }
 
-Vector2 InputManager::getMousePosition() const {
-    return GetMousePosition();
+Vec2 InputManager::getMousePosition() const {
+    return m_mousePosition;
 }
 
 bool InputManager::isMouseCapturedByUI() const {
@@ -101,13 +122,13 @@ bool InputManager::isActionAvailable(InputAction action) const {
         case InputAction::CAMERA_ROTATE:
         case InputAction::CAMERA_ZOOM:
         case InputAction::CAMERA_TOGGLE_CURSOR:
-            return m_currentContext == InputContext::GAME || 
+            return m_currentContext == InputContext::GAME ||
                    m_currentContext == InputContext::BUILDING;
-        
+
         // Character actions only in GAME
         case InputAction::CHARACTER_MOVE:
             return m_currentContext == InputContext::GAME;
-        
+
         // Building actions only in BUILDING
         case InputAction::BUILDING_ROTATE_CCW:
         case InputAction::BUILDING_ROTATE_CW:
@@ -115,7 +136,7 @@ bool InputManager::isActionAvailable(InputAction action) const {
         case InputAction::BUILDING_PLACE:
         case InputAction::BUILDING_CANCEL:
             return m_currentContext == InputContext::BUILDING;
-        
+
         // UI actions always available
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
         case InputAction::UI_TOGGLE_PAUSE:
@@ -138,13 +159,13 @@ bool InputManager::isActionBlockedByUI(InputAction action) const {
     if (action == InputAction::UI_SPEED_FAST) return false;
     if (action == InputAction::UI_CONFIRM) return false;
     if (action == InputAction::UI_CANCEL) return false;
-    
+
     // Mouse actions blocked when UI wants mouse
     if (isMouseAction(action) && m_mouseCapture) return true;
-    
+
     // Keyboard actions blocked when UI wants keyboard
     if (isKeyboardAction(action) && m_keyboardCapture) return true;
-    
+
     return false;
 }
 
@@ -185,202 +206,245 @@ bool InputManager::isKeyboardAction(InputAction action) const {
     }
 }
 
+// Helper to check if SDL key is down
 bool InputManager::getRawActionState(InputAction action) const {
+    auto isKeyDown = [this](SDL_Scancode code) {
+        auto it = m_keysCurrent.find(code);
+        return it != m_keysCurrent.end() && it->second;
+    };
+
+    auto isMouseDown = [this](Uint8 button) {
+        auto it = m_mouseButtonsCurrent.find(button);
+        return it != m_mouseButtonsCurrent.end() && it->second;
+    };
+
     switch (action) {
         // Camera panning
         case InputAction::CAMERA_PAN_FORWARD:
-            return IsKeyDown(KEY_W) || IsKeyDown(KEY_UP);
+            return isKeyDown(SDL_SCANCODE_W) || isKeyDown(SDL_SCANCODE_UP);
         case InputAction::CAMERA_PAN_BACK:
-            return IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
+            return isKeyDown(SDL_SCANCODE_S) || isKeyDown(SDL_SCANCODE_DOWN);
         case InputAction::CAMERA_PAN_LEFT:
-            return IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
+            return isKeyDown(SDL_SCANCODE_A) || isKeyDown(SDL_SCANCODE_LEFT);
         case InputAction::CAMERA_PAN_RIGHT:
-            return IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
-        
+            return isKeyDown(SDL_SCANCODE_D) || isKeyDown(SDL_SCANCODE_RIGHT);
+
         // Camera rotation
         case InputAction::CAMERA_ROTATE:
-            return IsMouseButtonDown(MOUSE_BUTTON_MIDDLE);
-        
+            return isMouseDown(SDL_BUTTON_MIDDLE);
+
         // Camera zoom (handled via getMouseWheelMove)
         case InputAction::CAMERA_ZOOM:
             return false; // Not a held state
-        
+
         // Camera toggle cursor
         case InputAction::CAMERA_TOGGLE_CURSOR:
-            return IsKeyDown(KEY_P);
-        
+            return isKeyDown(SDL_SCANCODE_P);
+
         // Character movement
         case InputAction::CHARACTER_MOVE:
-            return IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
-        
+            return isMouseDown(SDL_BUTTON_RIGHT);
+
         // Building rotation
         case InputAction::BUILDING_ROTATE_CCW:
-            return IsKeyDown(KEY_Q);
+            return isKeyDown(SDL_SCANCODE_Q);
         case InputAction::BUILDING_ROTATE_CW:
-            return IsKeyDown(KEY_E);
-        
+            return isKeyDown(SDL_SCANCODE_E);
+
         // Building scale modifier
         case InputAction::BUILDING_SCALE_MODIFIER:
-            return IsKeyDown(KEY_LEFT_SHIFT);
-        
+            return isKeyDown(SDL_SCANCODE_LSHIFT);
+
         // Building place
         case InputAction::BUILDING_PLACE:
-            return IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-        
+            return isMouseDown(SDL_BUTTON_LEFT);
+
         // Building cancel
         case InputAction::BUILDING_CANCEL:
-            return IsKeyDown(KEY_ESCAPE) || IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
-        
+            return isKeyDown(SDL_SCANCODE_ESCAPE) || isMouseDown(SDL_BUTTON_RIGHT);
+
         // UI actions
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
-            return IsKeyDown(KEY_F12);
+            return isKeyDown(SDL_SCANCODE_F12);
         case InputAction::UI_TOGGLE_PAUSE:
-            return IsKeyDown(KEY_SPACE);
+            return isKeyDown(SDL_SCANCODE_SPACE);
         case InputAction::UI_SPEED_NORMAL:
-            return IsKeyDown(KEY_ONE);
+            return isKeyDown(SDL_SCANCODE_1);
         case InputAction::UI_SPEED_MEDIUM:
-            return IsKeyDown(KEY_TWO);
+            return isKeyDown(SDL_SCANCODE_2);
         case InputAction::UI_SPEED_FAST:
-            return IsKeyDown(KEY_THREE);
+            return isKeyDown(SDL_SCANCODE_3);
         case InputAction::UI_CONFIRM:
-            return IsKeyDown(KEY_ENTER);
+            return isKeyDown(SDL_SCANCODE_RETURN);
         case InputAction::UI_CANCEL:
-            return IsKeyDown(KEY_ESCAPE);
-        
+            return isKeyDown(SDL_SCANCODE_ESCAPE);
+
         default:
             return false;
     }
 }
 
 bool InputManager::getRawActionJustPressed(InputAction action) const {
+    auto wasKeyPressed = [this](SDL_Scancode code) {
+        auto curr = m_keysCurrent.find(code);
+        auto prev = m_keysPrevious.find(code);
+        bool isDown = (curr != m_keysCurrent.end() && curr->second);
+        bool wasDown = (prev != m_keysPrevious.end() && prev->second);
+        return isDown && !wasDown;
+    };
+
+    auto wasMousePressed = [this](Uint8 button) {
+        auto curr = m_mouseButtonsCurrent.find(button);
+        auto prev = m_mouseButtonsPrevious.find(button);
+        bool isDown = (curr != m_mouseButtonsCurrent.end() && curr->second);
+        bool wasDown = (prev != m_mouseButtonsPrevious.end() && prev->second);
+        return isDown && !wasDown;
+    };
+
     switch (action) {
-        // Camera panning (not typically "just pressed", but supporting it)
+        // Camera panning
         case InputAction::CAMERA_PAN_FORWARD:
-            return IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP);
+            return wasKeyPressed(SDL_SCANCODE_W) || wasKeyPressed(SDL_SCANCODE_UP);
         case InputAction::CAMERA_PAN_BACK:
-            return IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN);
+            return wasKeyPressed(SDL_SCANCODE_S) || wasKeyPressed(SDL_SCANCODE_DOWN);
         case InputAction::CAMERA_PAN_LEFT:
-            return IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT);
+            return wasKeyPressed(SDL_SCANCODE_A) || wasKeyPressed(SDL_SCANCODE_LEFT);
         case InputAction::CAMERA_PAN_RIGHT:
-            return IsKeyPressed(KEY_D) || IsKeyPressed(KEY_RIGHT);
-        
+            return wasKeyPressed(SDL_SCANCODE_D) || wasKeyPressed(SDL_SCANCODE_RIGHT);
+
         // Camera rotation
         case InputAction::CAMERA_ROTATE:
-            return IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE);
-        
-        // Camera zoom (not a pressed action)
+            return wasMousePressed(SDL_BUTTON_MIDDLE);
+
+        // Camera zoom
         case InputAction::CAMERA_ZOOM:
             return false;
-        
+
         // Camera toggle cursor
         case InputAction::CAMERA_TOGGLE_CURSOR:
-            return IsKeyPressed(KEY_P);
-        
+            return wasKeyPressed(SDL_SCANCODE_P);
+
         // Character movement
         case InputAction::CHARACTER_MOVE:
-            return IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
-        
+            return wasMousePressed(SDL_BUTTON_RIGHT);
+
         // Building rotation
         case InputAction::BUILDING_ROTATE_CCW:
-            return IsKeyPressed(KEY_Q);
+            return wasKeyPressed(SDL_SCANCODE_Q);
         case InputAction::BUILDING_ROTATE_CW:
-            return IsKeyPressed(KEY_E);
-        
+            return wasKeyPressed(SDL_SCANCODE_E);
+
         // Building scale modifier
         case InputAction::BUILDING_SCALE_MODIFIER:
-            return IsKeyPressed(KEY_LEFT_SHIFT);
-        
+            return wasKeyPressed(SDL_SCANCODE_LSHIFT);
+
         // Building place
         case InputAction::BUILDING_PLACE:
-            return IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-        
+            return wasMousePressed(SDL_BUTTON_LEFT);
+
         // Building cancel
         case InputAction::BUILDING_CANCEL:
-            return IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
-        
+            return wasKeyPressed(SDL_SCANCODE_ESCAPE) || wasMousePressed(SDL_BUTTON_RIGHT);
+
         // UI actions
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
-            return IsKeyPressed(KEY_F12);
+            return wasKeyPressed(SDL_SCANCODE_F12);
         case InputAction::UI_TOGGLE_PAUSE:
-            return IsKeyPressed(KEY_SPACE);
+            return wasKeyPressed(SDL_SCANCODE_SPACE);
         case InputAction::UI_SPEED_NORMAL:
-            return IsKeyPressed(KEY_ONE);
+            return wasKeyPressed(SDL_SCANCODE_1);
         case InputAction::UI_SPEED_MEDIUM:
-            return IsKeyPressed(KEY_TWO);
+            return wasKeyPressed(SDL_SCANCODE_2);
         case InputAction::UI_SPEED_FAST:
-            return IsKeyPressed(KEY_THREE);
+            return wasKeyPressed(SDL_SCANCODE_3);
         case InputAction::UI_CONFIRM:
-            return IsKeyPressed(KEY_ENTER);
+            return wasKeyPressed(SDL_SCANCODE_RETURN);
         case InputAction::UI_CANCEL:
-            return IsKeyPressed(KEY_ESCAPE);
-        
+            return wasKeyPressed(SDL_SCANCODE_ESCAPE);
+
         default:
             return false;
     }
 }
 
 bool InputManager::getRawActionJustReleased(InputAction action) const {
+    auto wasKeyReleased = [this](SDL_Scancode code) {
+        auto curr = m_keysCurrent.find(code);
+        auto prev = m_keysPrevious.find(code);
+        bool isDown = (curr != m_keysCurrent.end() && curr->second);
+        bool wasDown = (prev != m_keysPrevious.end() && prev->second);
+        return !isDown && wasDown;
+    };
+
+    auto wasMouseReleased = [this](Uint8 button) {
+        auto curr = m_mouseButtonsCurrent.find(button);
+        auto prev = m_mouseButtonsPrevious.find(button);
+        bool isDown = (curr != m_mouseButtonsCurrent.end() && curr->second);
+        bool wasDown = (prev != m_mouseButtonsPrevious.end() && prev->second);
+        return !isDown && wasDown;
+    };
+
     switch (action) {
         // Camera panning
         case InputAction::CAMERA_PAN_FORWARD:
-            return IsKeyReleased(KEY_W) || IsKeyReleased(KEY_UP);
+            return wasKeyReleased(SDL_SCANCODE_W) || wasKeyReleased(SDL_SCANCODE_UP);
         case InputAction::CAMERA_PAN_BACK:
-            return IsKeyReleased(KEY_S) || IsKeyReleased(KEY_DOWN);
+            return wasKeyReleased(SDL_SCANCODE_S) || wasKeyReleased(SDL_SCANCODE_DOWN);
         case InputAction::CAMERA_PAN_LEFT:
-            return IsKeyReleased(KEY_A) || IsKeyReleased(KEY_LEFT);
+            return wasKeyReleased(SDL_SCANCODE_A) || wasKeyReleased(SDL_SCANCODE_LEFT);
         case InputAction::CAMERA_PAN_RIGHT:
-            return IsKeyReleased(KEY_D) || IsKeyReleased(KEY_RIGHT);
-        
+            return wasKeyReleased(SDL_SCANCODE_D) || wasKeyReleased(SDL_SCANCODE_RIGHT);
+
         // Camera rotation
         case InputAction::CAMERA_ROTATE:
-            return IsMouseButtonReleased(MOUSE_BUTTON_MIDDLE);
-        
+            return wasMouseReleased(SDL_BUTTON_MIDDLE);
+
         // Camera zoom
         case InputAction::CAMERA_ZOOM:
             return false;
-        
+
         // Camera toggle cursor
         case InputAction::CAMERA_TOGGLE_CURSOR:
-            return IsKeyReleased(KEY_P);
-        
+            return wasKeyReleased(SDL_SCANCODE_P);
+
         // Character movement
         case InputAction::CHARACTER_MOVE:
-            return IsMouseButtonReleased(MOUSE_BUTTON_RIGHT);
-        
+            return wasMouseReleased(SDL_BUTTON_RIGHT);
+
         // Building rotation
         case InputAction::BUILDING_ROTATE_CCW:
-            return IsKeyReleased(KEY_Q);
+            return wasKeyReleased(SDL_SCANCODE_Q);
         case InputAction::BUILDING_ROTATE_CW:
-            return IsKeyReleased(KEY_E);
-        
+            return wasKeyReleased(SDL_SCANCODE_E);
+
         // Building scale modifier
         case InputAction::BUILDING_SCALE_MODIFIER:
-            return IsKeyReleased(KEY_LEFT_SHIFT);
-        
+            return wasKeyReleased(SDL_SCANCODE_LSHIFT);
+
         // Building place
         case InputAction::BUILDING_PLACE:
-            return IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
-        
+            return wasMouseReleased(SDL_BUTTON_LEFT);
+
         // Building cancel
         case InputAction::BUILDING_CANCEL:
-            return IsKeyReleased(KEY_ESCAPE) || IsMouseButtonReleased(MOUSE_BUTTON_RIGHT);
-        
+            return wasKeyReleased(SDL_SCANCODE_ESCAPE) || wasMouseReleased(SDL_BUTTON_RIGHT);
+
         // UI actions
         case InputAction::UI_TOGGLE_SCRIPT_EDITOR:
-            return IsKeyReleased(KEY_F12);
+            return wasKeyReleased(SDL_SCANCODE_F12);
         case InputAction::UI_TOGGLE_PAUSE:
-            return IsKeyReleased(KEY_SPACE);
+            return wasKeyReleased(SDL_SCANCODE_SPACE);
         case InputAction::UI_SPEED_NORMAL:
-            return IsKeyReleased(KEY_ONE);
+            return wasKeyReleased(SDL_SCANCODE_1);
         case InputAction::UI_SPEED_MEDIUM:
-            return IsKeyReleased(KEY_TWO);
+            return wasKeyReleased(SDL_SCANCODE_2);
         case InputAction::UI_SPEED_FAST:
-            return IsKeyReleased(KEY_THREE);
+            return wasKeyReleased(SDL_SCANCODE_3);
         case InputAction::UI_CONFIRM:
-            return IsKeyReleased(KEY_ENTER);
+            return wasKeyReleased(SDL_SCANCODE_RETURN);
         case InputAction::UI_CANCEL:
-            return IsKeyReleased(KEY_ESCAPE);
-        
+            return wasKeyReleased(SDL_SCANCODE_ESCAPE);
+
         default:
             return false;
     }

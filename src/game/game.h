@@ -1,8 +1,8 @@
 #pragma once
-#include "../../rlImGui/rlImGui.h"
 #include "../lights/lightmanager.h"
 #include "../resources/model_manager.h"
-#include "../window/window.h"
+#include "../window/sdl_window.h"
+#include "../rendering/filament_engine.h"
 #include "../camera/camera.h"
 #include "../character/character.h"
 #include "../character/controller.h"
@@ -12,22 +12,27 @@
 #include "../map/environment.hpp"
 #include "game_object.h"
 #include <memory>
-#include <raylib.h>
+#include <raymath.h>
 namespace moiras
 {
   class Game
   {
-    RenderTexture2D renderTarget;
-    Shader outlineShader;
-    Shader celShader;
+    // Filament rendering
+    SDLWindow m_window;
+    FilamentEngine m_filamentEngine;
+
+    // Legacy shaders (will be migrated in later phases)
+    // Shader outlineShader;
+    // Shader celShader;
+
     float nearPlane;
     float farPlane;
-    int depthTextureLoc;
     std::unordered_map<unsigned int, GameObject *> registry;
     int m_frameCount = 0;
 
     void updateScriptsRecursive(GameObject *obj, float dt);
-    void drawShadowCastersRecursive(GameObject *obj, Material &shadowMat);
+    // Shadow casters will be handled by Filament in Phase 3
+    // void drawShadowCastersRecursive(GameObject *obj, Material &shadowMat);
 
   public:
     GameObject root;
@@ -36,11 +41,12 @@ namespace moiras
     std::unique_ptr<CharacterController> playerController;
     StructureBuilder *structureBuilder = nullptr;
     ScriptEditor *scriptEditor = nullptr;
-    bool outlineEnabled = true; // Toggle per l'outline shader
+    bool outlineEnabled = false; // Disabled for Phase 1 (will re-enable in Phase 5)
+
     Game();
     ~Game();
     void setup();
-    void loop(Window window);
+    void loop();
     void renderLoadingFrame(const char *message, float progress);
     void registerObject(unsigned int id, GameObject *object)
     {
@@ -62,7 +68,7 @@ namespace moiras
     }
 
     template <typename T>
-    std::vector<T*> getObjectInRange(float radius, Vector3 position)
+    std::vector<T*> getObjectInRange(float radius, const Vector3& position)
     {
       std::vector<T*> results;
       for (const auto &[id, object] : registry)

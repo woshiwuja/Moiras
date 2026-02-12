@@ -69,7 +69,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sol2)
 
-# Basic ImGui (not Ned's version)
+# Basic ImGui with SDL2 + OpenGL3 backends
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui)
 add_library(imgui STATIC
     ${IMGUI_DIR}/imgui.cpp
@@ -77,8 +77,14 @@ add_library(imgui STATIC
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_tables.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
 )
-target_include_directories(imgui PUBLIC ${IMGUI_DIR})
+target_include_directories(imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+    ${SDL2_INCLUDE_DIRS}
+)
 
 # Add ImGuiColorTextEdit
 set(IMGUICOLORTEXTEDIT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/ImGuiColorTextEdit)

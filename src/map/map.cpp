@@ -5,6 +5,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
+#include <r3d/r3d.h>
 #include <cstdio>
 
 namespace moiras {
@@ -71,7 +72,12 @@ Map &Map::operator=(Map &&other) noexcept {
 }
 
 void Map::draw() {
-  DrawModel(model, position, 1.0f, WHITE);
+  // Use r3d for PBR terrain rendering (called within R3D_Begin/R3D_End)
+  R3D_DrawModel(model, position, 1.0f, WHITE);
+}
+
+void Map::drawSea() {
+  // Draw the sea with its custom shader (call AFTER R3D_End, inside BeginMode3D)
   if (seaShaderLoaded.id > 0 && seaModel.meshCount > 0) {
     rlEnableColorBlend();
     rlSetBlendMode(RL_BLEND_ALPHA);
@@ -79,9 +85,6 @@ void Map::draw() {
     DrawModel(seaModel, position, 1.0f, WHITE);
     EndShaderMode();
   }
-  if (showNavMeshDebug && navMeshBuilt) {
-    navMesh.drawDebug();
-  };
 }
 
 std::unique_ptr<Map> mapFromHeightmap(const std::string &filename, float width,

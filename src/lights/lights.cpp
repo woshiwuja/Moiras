@@ -19,32 +19,13 @@ void Light::normalizeColor() {
     colorNormalized[3] = color.a / 255.0f;
 }
 
-void Light::setupShaderLocations(Shader shader, int lightIndex) {
-    enabledLoc = GetShaderLocation(shader, TextFormat("lights[%i].enabled", lightIndex));
-    typeLoc = GetShaderLocation(shader, TextFormat("lights[%i].type", lightIndex));
-    positionLoc = GetShaderLocation(shader, TextFormat("lights[%i].position", lightIndex));
-    targetLoc = GetShaderLocation(shader, TextFormat("lights[%i].target", lightIndex));
-    colorLoc = GetShaderLocation(shader, TextFormat("lights[%i].color", lightIndex));
-    intensityLoc = GetShaderLocation(shader, TextFormat("lights[%i].intensity", lightIndex));
+void Light::setupShaderLocations(Shader /*shader*/, int /*lightIndex*/) {
+    // No-op: lighting is handled by r3d
 }
 
-void Light::updateShader(Shader shader) {
+void Light::updateShader(Shader /*shader*/) {
+    // No-op: lighting is handled by r3d
     normalizeColor();
-    
-    int enabledInt = enabled ? 1 : 0;
-    int typeInt = static_cast<int>(getType());
-    
-    SetShaderValue(shader, enabledLoc, &enabledInt, SHADER_UNIFORM_INT);
-    SetShaderValue(shader, typeLoc, &typeInt, SHADER_UNIFORM_INT);
-    
-    float pos[3] = {position.x, position.y, position.z};
-    SetShaderValue(shader, positionLoc, pos, SHADER_UNIFORM_VEC3);
-    
-    float tgt[3] = {target.x, target.y, target.z};
-    SetShaderValue(shader, targetLoc, tgt, SHADER_UNIFORM_VEC3);
-    
-    SetShaderValue(shader, colorLoc, colorNormalized, SHADER_UNIFORM_VEC4);
-    SetShaderValue(shader, intensityLoc, &intensity, SHADER_UNIFORM_FLOAT);
 }
 
 void Light::update() {

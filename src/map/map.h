@@ -64,6 +64,7 @@ std::vector<Vector3> debugPath;
   Map &operator=(Map &&other) noexcept;
   ~Map();
   void draw() override;
+  void drawSea();   // Draw the sea with its custom shader (call after R3D_End)
   void loadSeaShader();
   void setFog();
   void addSea();

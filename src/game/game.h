@@ -13,21 +13,18 @@
 #include "game_object.h"
 #include <memory>
 #include <raylib.h>
+#include <r3d/r3d.h>
+
 namespace moiras
 {
   class Game
   {
-    RenderTexture2D renderTarget;
-    Shader outlineShader;
-    Shader celShader;
-    float nearPlane;
-    float farPlane;
-    int depthTextureLoc;
+    R3D_Light r3dDirLight  = 0;
+    R3D_Light r3dPointLight = 0;
     std::unordered_map<unsigned int, GameObject *> registry;
     int m_frameCount = 0;
 
     void updateScriptsRecursive(GameObject *obj, float dt);
-    void drawShadowCastersRecursive(GameObject *obj, Material &shadowMat);
 
   public:
     GameObject root;
@@ -36,7 +33,7 @@ namespace moiras
     std::unique_ptr<CharacterController> playerController;
     StructureBuilder *structureBuilder = nullptr;
     ScriptEditor *scriptEditor = nullptr;
-    bool outlineEnabled = true; // Toggle per l'outline shader
+
     Game();
     ~Game();
     void setup();

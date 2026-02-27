@@ -1,6 +1,7 @@
 #include "structure.h"
 #include "imgui.h"
 #include <raymath.h>
+#include <r3d/r3d.h>
 
 namespace moiras {
 
@@ -49,12 +50,16 @@ void Structure::draw() {
   Matrix transform =
       MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-  // Draw each mesh with its material
-  for (int i = 0; i < modelInstance.meshCount(); i++) {
-    int materialIndex = modelInstance.meshMaterial()[i];
-    Material material = modelInstance.materials()[materialIndex];
-    DrawMesh(modelInstance.meshes()[i], material, transform);
-  }
+  // Build a temporary Model struct from modelInstance for r3d
+  Model tempModel = {0};
+  tempModel.transform = MatrixIdentity();
+  tempModel.meshCount = modelInstance.meshCount();
+  tempModel.meshes = modelInstance.meshes();
+  tempModel.materialCount = modelInstance.materialCount();
+  tempModel.materials = modelInstance.materials();
+  tempModel.meshMaterial = modelInstance.meshMaterial();
+
+  R3D_DrawModelPro(tempModel, transform, WHITE);
 }
 // GameObject::draw();
 
@@ -77,10 +82,6 @@ void Structure::loadModel(ModelManager &manager, const std::string &path) {
   modelInstance = manager.acquire(path);
 
   if (modelInstance.isValid()) {
-    // Applica shader condiviso se disponibile
-    if (sharedShader.id != 0) {
-      applyShader(sharedShader);
-    }
     updateBounds();
     TraceLog(LOG_INFO, "Structure loaded: %s", path.c_str());
   } else {

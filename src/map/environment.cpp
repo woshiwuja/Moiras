@@ -3,6 +3,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
+#include <r3d/r3d.h>
 #include <cstdlib>
 #include <cmath>
 #include <algorithm>
@@ -33,12 +34,10 @@ const char *patchDisplayName(const RockPatch &patch)
 
 EnvironmentalObject::EnvironmentalObject(float rockSize, float spawnRadius)
     : GameObject("Rocks"),
-      m_instancingShader{0},
       m_terrain(nullptr),
       m_rockSize(rockSize),
       m_spawnRadius(spawnRadius),
       m_initialized(false),
-      m_shaderLoaded(false),
       m_cameraPos{0},
       m_cullDistance(150.0f),
       m_brushMode(false),
@@ -52,11 +51,9 @@ EnvironmentalObject::EnvironmentalObject(float rockSize, float spawnRadius)
 EnvironmentalObject::~EnvironmentalObject()
 {
     for (auto &patch : m_patches) {
-        UnloadMesh(patch.mesh);
-        UnloadMaterial(patch.material);
-    }
-    if (m_shaderLoaded) {
-        UnloadShader(m_instancingShader);
+        if (patch.model.meshCount > 0) {
+            UnloadModel(patch.model);
+        }
     }
 }
 
@@ -75,19 +72,6 @@ Mesh EnvironmentalObject::generateMesh(RockMeshType type, float size)
         default:
             return GenMeshCube(size, size * 0.7f, size);
     }
-}
-
-void EnvironmentalObject::loadShader()
-{
-    if (m_shaderLoaded) return;
-
-    m_instancingShader = LoadShader("../assets/shaders/instancing.vs",
-                                    "../assets/shaders/instancing.fs");
-    m_instancingShader.locs[SHADER_LOC_MATRIX_MVP] =
-        GetShaderLocation(m_instancingShader, "mvp");
-    m_instancingShader.locs[SHADER_LOC_MATRIX_MODEL] =
-        GetShaderLocationAttrib(m_instancingShader, "instanceTransform");
-    m_shaderLoaded = true;
 }
 
 void EnvironmentalObject::scanModelFiles()
@@ -129,13 +113,11 @@ int EnvironmentalObject::findOrCreatePatch(RockMeshType type)
 
 int EnvironmentalObject::addPatch(RockMeshType type)
 {
-    loadShader();
-
     RockPatch patch;
     patch.meshType = type;
     patch.mesh = generateMesh(type, m_rockSize);
-    patch.material = LoadMaterialDefault();
-    patch.material.shader = m_instancingShader;
+    patch.model = LoadModelFromMesh(patch.mesh);
+    patch.mesh = {0}; // model owns the GPU buffers now
 
     Color colors[] = {
         {180, 210, 50, 255},   // giallo-verde (cube)
@@ -145,7 +127,7 @@ int EnvironmentalObject::addPatch(RockMeshType type)
         {190, 100, 130, 255},  // rosa (cone)
     };
     int ci = (int)type < 5 ? (int)type : 0;
-    patch.material.maps[MATERIAL_MAP_DIFFUSE].color = colors[ci];
+    patch.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = colors[ci];
 
     m_patches.push_back(std::move(patch));
     int idx = (int)m_patches.size() - 1;
@@ -156,8 +138,6 @@ int EnvironmentalObject::addPatch(RockMeshType type)
 
 int EnvironmentalObject::addPatchFromModel(const std::string &modelPath)
 {
-    loadShader();
-
     Model model = LoadModel(modelPath.c_str());
     if (model.meshCount == 0) {
         TraceLog(LOG_WARNING, "Rocks: Failed to load model %s", modelPath.c_str());
@@ -165,63 +145,25 @@ int EnvironmentalObject::addPatchFromModel(const std::string &modelPath)
         return -1;
     }
 
-    // Copia la prima mesh del modello
-    // Raylib non ha un "copy mesh" diretto, quindi usiamo GenMeshCopy
-    // via upload: prendiamo i dati dalla mesh caricata
-    Mesh srcMesh = model.meshes[0];
-
-    // Alloca una nuova mesh copiando i dati vertex
-    Mesh mesh = {0};
-    mesh.vertexCount = srcMesh.vertexCount;
-    mesh.triangleCount = srcMesh.triangleCount;
-
-    mesh.vertices = (float *)RL_MALLOC(mesh.vertexCount * 3 * sizeof(float));
-    memcpy(mesh.vertices, srcMesh.vertices, mesh.vertexCount * 3 * sizeof(float));
-
-    if (srcMesh.texcoords) {
-        mesh.texcoords = (float *)RL_MALLOC(mesh.vertexCount * 2 * sizeof(float));
-        memcpy(mesh.texcoords, srcMesh.texcoords, mesh.vertexCount * 2 * sizeof(float));
-    }
-
-    if (srcMesh.normals) {
-        mesh.normals = (float *)RL_MALLOC(mesh.vertexCount * 3 * sizeof(float));
-        memcpy(mesh.normals, srcMesh.normals, mesh.vertexCount * 3 * sizeof(float));
-    }
-
-    if (srcMesh.indices) {
-        mesh.indices = (unsigned short *)RL_MALLOC(mesh.triangleCount * 3 * sizeof(unsigned short));
-        memcpy(mesh.indices, srcMesh.indices, mesh.triangleCount * 3 * sizeof(unsigned short));
-    }
-
-    UploadMesh(&mesh, false);
-
-    // Estrai il nome del file
     std::filesystem::path p(modelPath);
     std::string fileName = p.stem().string();
 
     RockPatch patch;
     patch.meshType = RockMeshType::CUSTOM;
     patch.customName = fileName;
-    patch.mesh = mesh;
-    patch.material = LoadMaterialDefault();
-    patch.material.shader = m_instancingShader;
-    patch.material.maps[MATERIAL_MAP_DIFFUSE].color = {220, 220, 220, 255};
+    patch.model = model; // r3d draws via the model directly
 
-    // Se il modello ha texture, copiale nel material
-    if (model.materialCount > 0 && model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture.id != 0) {
-        patch.material.maps[MATERIAL_MAP_DIFFUSE].texture =
-            model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture;
-        // Non fare UnloadModel perche' scaricherebbe la texture
-        // Libera solo le mesh (tranne la prima che abbiamo copiato) e il model struct
+    // Apply a neutral tint if no diffuse texture
+    if (patch.model.materialCount > 0 &&
+        patch.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture.id == 0) {
+        patch.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = {220, 220, 220, 255};
     }
-
-    UnloadModel(model);
 
     m_patches.push_back(std::move(patch));
     int idx = (int)m_patches.size() - 1;
 
-    TraceLog(LOG_INFO, "Rocks: Created custom patch %d from %s (%d verts)",
-             idx, fileName.c_str(), mesh.vertexCount);
+    TraceLog(LOG_INFO, "Rocks: Created custom patch %d from %s (%d meshes)",
+             idx, fileName.c_str(), model.meshCount);
     return idx;
 }
 
@@ -414,8 +356,8 @@ void EnvironmentalObject::draw()
         }
 
         if (!m_visibleBuffer.empty()) {
-            DrawMeshInstanced(patch.mesh, patch.material,
-                              m_visibleBuffer.data(), (int)m_visibleBuffer.size());
+            R3D_DrawModelInstanced(patch.model, m_visibleBuffer.data(),
+                                   (int)m_visibleBuffer.size(), WHITE);
         }
     }
 }

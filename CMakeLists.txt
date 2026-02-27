@@ -28,19 +28,26 @@ set(USE_F16C ON)
 set(USE_FMADD ON)
 set(CMAKE_CXX_STANDARD 20)
 
-# Fetch Raylib
-FetchContent_Declare(
-    raylib
-    GIT_REPOSITORY https://github.com/raysan5/raylib.git
-    GIT_TAG 5.5
-)
+# Disable examples/tests for all fetched libs
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-# Configura GLFW (nuovo metodo)
+# Configure GLFW (X11 only, no Wayland)
 set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(raylib)
+# Fetch r3d (includes vendored raylib 5.5 as submodule)
+# r3d provides PBR rendering, lighting, shadows, post-processing and frustum culling
+set(R3D_RAYLIB_VENDORED ON CACHE BOOL "" FORCE)
+set(R3D_SUPPORT_ASSIMP OFF CACHE BOOL "" FORCE)
+set(R3D_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(R3D_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    r3d
+    GIT_REPOSITORY https://github.com/Bigfoot71/r3d.git
+    GIT_TAG v0.8
+    GIT_SUBMODULES "external/raylib"
+)
+FetchContent_MakeAvailable(r3d)
 
 # Fetch JoltPhysics
 FetchContent_Declare(
@@ -177,7 +184,8 @@ target_include_directories(Moiras PUBLIC
     ${recastnavigation_SOURCE_DIR}/Detour/Include
     ${recastnavigation_SOURCE_DIR}/DetourCrowd/Include
     ${recastnavigation_SOURCE_DIR}/DetourTileCache/Include
-    raylib/src/
+    ${r3d_SOURCE_DIR}/external/raylib/src
+    ${r3d_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/
     ${CMAKE_CURRENT_SOURCE_DIR}/rlImGui/
 )
@@ -193,6 +201,7 @@ target_compile_definitions(Moiras PRIVATE NO_FONT_AWESOME)
 
 target_link_libraries(Moiras
     PRIVATE
+    r3d
     raylib
     Jolt
     imgui

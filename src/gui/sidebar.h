@@ -35,9 +35,6 @@ namespace moiras
         // Puntatore all'environment object (instanced rocks)
         EnvironmentalObject *environmentObject = nullptr;
 
-        // Puntatore al toggle outline shader
-        bool *outlineEnabled = nullptr;
-
         bool showImGuiDemo = false;
         bool showStyleEditor = false;
 

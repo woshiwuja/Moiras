@@ -1,6 +1,7 @@
 #pragma once
 #include "../game/game_object.h"
 #include <raylib.h>
+#include <r3d/r3d.h>
 #include <vector>
 #include <string>
 
@@ -18,23 +19,21 @@ enum class RockMeshType {
 
 struct RockPatch {
     Mesh mesh;
-    Material material;
+    Model model;
     RockMeshType meshType;
     std::string customName; // nome file per patch CUSTOM
     std::vector<Matrix> transforms;
 
-    RockPatch() : mesh{0}, material{0}, meshType(RockMeshType::CUBE) {}
+    RockPatch() : mesh{0}, model{0}, meshType(RockMeshType::CUBE) {}
 };
 
 class EnvironmentalObject : public GameObject {
 private:
     std::vector<RockPatch> m_patches;
-    Shader m_instancingShader;
     const Model *m_terrain;
     float m_rockSize;
     float m_spawnRadius;
     bool m_initialized;
-    bool m_shaderLoaded;
 
     // Camera culling
     Vector3 m_cameraPos;
@@ -51,7 +50,6 @@ private:
     std::vector<std::string> m_modelFiles;
 
     Mesh generateMesh(RockMeshType type, float size);
-    void loadShader();
     int findOrCreatePatch(RockMeshType type);
 
 public:

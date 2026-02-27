@@ -1,9 +1,10 @@
 #include "character.h"
 #include <limits>
 #include <raylib.h>
+#include <raymath.h>
+#include <r3d/r3d.h>
 #include "../gui/inventory.hpp"
 #include "../time/time_manager.h"
-#include <raymath.h>
 
 namespace moiras
 {
@@ -131,12 +132,6 @@ namespace moiras
                 TraceLog(LOG_INFO, "  - Roughness value: %.2f", mat.maps[MATERIAL_MAP_ROUGHNESS].value);
             }
 
-            // Applica lo shader
-            if (sharedShader.id > 0)
-            {
-                applyShader(sharedShader);
-            }
-
             // Load animations from the same file
             loadAnimations(path);
         }
@@ -195,23 +190,24 @@ namespace moiras
             float angle;
             QuaternionToAxisAngle(q, &axis, &angle);
 
-            // Calcola la matrice di trasformazione
             Matrix matScale = MatrixScale(scale, scale, scale);
-            Matrix matRotation = MatrixRotate(axis, angle); // angle is already in radians from QuaternionToAxisAngle
+            Matrix matRotation = MatrixRotate(axis, angle);
             Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
-
             Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-            // Disegna ogni mesh con il suo materiale
-            // Note: bindAnimationData/unbindAnimationData are no-ops with per-instance meshes
-            for (int i = 0; i < modelInstance.meshCount(); i++)
-            {
-                int materialIndex = modelInstance.meshMaterial()[i];
-                Material material = modelInstance.materials()[materialIndex];
+            // Build a temporary Model struct from modelInstance data for r3d
+            Model tempModel = {0};
+            tempModel.transform = MatrixIdentity();
+            tempModel.meshCount = modelInstance.meshCount();
+            tempModel.meshes = modelInstance.meshes();
+            tempModel.materialCount = modelInstance.materialCount();
+            tempModel.materials = modelInstance.materials();
+            tempModel.meshMaterial = modelInstance.meshMaterial();
+            tempModel.boneCount = modelInstance.boneCount();
+            tempModel.bones = modelInstance.bones();
+            tempModel.bindPose = modelInstance.bindPose();
 
-                // DrawMesh applica automaticamente lo shader del materiale
-                DrawMesh(modelInstance.meshes()[i], material, transform);
-            }
+            R3D_DrawModelPro(tempModel, transform, WHITE);
         }
         else
         {

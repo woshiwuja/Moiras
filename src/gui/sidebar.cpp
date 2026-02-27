@@ -425,23 +425,9 @@ namespace moiras
 
             Spacing();
             Separator();
-            Spacing();
-
-            // Outline shader toggle
-            if (this->outlineEnabled != nullptr)
-            {
-                Checkbox("Outline Shader", this->outlineEnabled);
-            }
-            else
-            {
-                TextColored(ImVec4(1, 0.5f, 0, 1), "Outline toggle not set");
-            }
-
-            // Shadow toggle
-            if (this->lightManager != nullptr)
-            {
-                Checkbox("Shadows", &this->lightManager->shadowsEnabled);
-            }
+            Text("Rendering (r3d)");
+            TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "PBR + shadows via r3d pipeline");
+            TextWrapped("Lighting controls are in the Lighting tab.");
         }
 
         if (CollapsingHeader("Environment"))

@@ -51,28 +51,19 @@ EnvironmentalObject::EnvironmentalObject(float rockSize, float spawnRadius)
 EnvironmentalObject::~EnvironmentalObject()
 {
     for (auto &patch : m_patches) {
-        if (patch.model.meshCount > 0) {
-            UnloadModel(patch.model);
+        if (patch.meshType == RockMeshType::CUSTOM) {
+            if (patch.r3dModel.meshCount > 0) {
+                R3D_UnloadModel(patch.r3dModel, true);
+            }
+        } else {
+            if (R3D_IsMeshValid(patch.r3dMesh)) {
+                R3D_UnloadMesh(patch.r3dMesh);
+                R3D_UnloadMaterial(patch.r3dMaterial);
+            }
         }
     }
 }
 
-Mesh EnvironmentalObject::generateMesh(RockMeshType type, float size)
-{
-    switch (type) {
-        case RockMeshType::SPHERE:
-            return GenMeshSphere(size * 0.5f, 8, 8);
-        case RockMeshType::HEMISPHERE:
-            return GenMeshHemiSphere(size * 0.5f, 8, 8);
-        case RockMeshType::CYLINDER:
-            return GenMeshCylinder(size * 0.4f, size * 0.7f, 8);
-        case RockMeshType::CONE:
-            return GenMeshCone(size * 0.5f, size * 0.8f, 8);
-        case RockMeshType::CUBE:
-        default:
-            return GenMeshCube(size, size * 0.7f, size);
-    }
-}
 
 void EnvironmentalObject::scanModelFiles()
 {
@@ -115,9 +106,25 @@ int EnvironmentalObject::addPatch(RockMeshType type)
 {
     RockPatch patch;
     patch.meshType = type;
-    patch.mesh = generateMesh(type, m_rockSize);
-    patch.model = LoadModelFromMesh(patch.mesh);
-    patch.mesh = {0}; // model owns the GPU buffers now
+
+    switch (type) {
+        case RockMeshType::SPHERE:
+            patch.r3dMesh = R3D_GenMeshSphere(m_rockSize * 0.5f, 8, 8);
+            break;
+        case RockMeshType::HEMISPHERE:
+            patch.r3dMesh = R3D_GenMeshHemiSphere(m_rockSize * 0.5f, 8, 8);
+            break;
+        case RockMeshType::CYLINDER:
+            patch.r3dMesh = R3D_GenMeshCylinder(m_rockSize * 0.4f, m_rockSize * 0.4f, m_rockSize * 0.7f, 8);
+            break;
+        case RockMeshType::CONE:
+            patch.r3dMesh = R3D_GenMeshCylinder(m_rockSize * 0.5f, 0.0f, m_rockSize * 0.8f, 8);
+            break;
+        case RockMeshType::CUBE:
+        default:
+            patch.r3dMesh = R3D_GenMeshCube(m_rockSize, m_rockSize * 0.7f, m_rockSize);
+            break;
+    }
 
     Color colors[] = {
         {180, 210, 50, 255},   // giallo-verde (cube)
@@ -127,7 +134,8 @@ int EnvironmentalObject::addPatch(RockMeshType type)
         {190, 100, 130, 255},  // rosa (cone)
     };
     int ci = (int)type < 5 ? (int)type : 0;
-    patch.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = colors[ci];
+    patch.r3dMaterial = R3D_GetDefaultMaterial();
+    patch.r3dMaterial.albedo.color = colors[ci];
 
     m_patches.push_back(std::move(patch));
     int idx = (int)m_patches.size() - 1;
@@ -138,10 +146,9 @@ int EnvironmentalObject::addPatch(RockMeshType type)
 
 int EnvironmentalObject::addPatchFromModel(const std::string &modelPath)
 {
-    Model model = LoadModel(modelPath.c_str());
+    R3D_Model model = R3D_LoadModel(modelPath.c_str());
     if (model.meshCount == 0) {
         TraceLog(LOG_WARNING, "Rocks: Failed to load model %s", modelPath.c_str());
-        UnloadModel(model);
         return -1;
     }
 
@@ -151,13 +158,7 @@ int EnvironmentalObject::addPatchFromModel(const std::string &modelPath)
     RockPatch patch;
     patch.meshType = RockMeshType::CUSTOM;
     patch.customName = fileName;
-    patch.model = model; // r3d draws via the model directly
-
-    // Apply a neutral tint if no diffuse texture
-    if (patch.model.materialCount > 0 &&
-        patch.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture.id == 0) {
-        patch.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = {220, 220, 220, 255};
-    }
+    patch.r3dModel = model;
 
     m_patches.push_back(std::move(patch));
     int idx = (int)m_patches.size() - 1;
@@ -346,18 +347,20 @@ void EnvironmentalObject::draw()
     for (auto &patch : m_patches) {
         if (patch.transforms.empty()) continue;
 
-        m_visibleBuffer.clear();
-        for (auto &t : patch.transforms) {
+        for (const auto &t : patch.transforms) {
             float dx = t.m12 - m_cameraPos.x;
             float dz = t.m14 - m_cameraPos.z;
-            if ((dx * dx + dz * dz) <= cullDist2) {
-                m_visibleBuffer.push_back(t);
-            }
-        }
+            if ((dx * dx + dz * dz) > cullDist2) continue;
 
-        if (!m_visibleBuffer.empty()) {
-            R3D_DrawModelInstanced(patch.model, m_visibleBuffer.data(),
-                                   (int)m_visibleBuffer.size(), WHITE);
+            if (patch.meshType == RockMeshType::CUSTOM) {
+                if (patch.r3dModel.meshCount > 0) {
+                    R3D_DrawModelPro(patch.r3dModel, t);
+                }
+            } else {
+                if (R3D_IsMeshValid(patch.r3dMesh)) {
+                    R3D_DrawMeshPro(patch.r3dMesh, patch.r3dMaterial, t);
+                }
+            }
         }
     }
 }

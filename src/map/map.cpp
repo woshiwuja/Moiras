@@ -25,6 +25,9 @@ Map::~Map() {
   if (model.meshCount > 0) {
     UnloadModel(model);
   }
+  if (r3dModel.meshCount > 0) {
+    R3D_UnloadModel(r3dModel, true);
+  }
   if (mesh.vertexCount > 0) {
     UnloadMesh(mesh);
   }
@@ -38,10 +41,11 @@ Map::~Map() {
 
 Map::Map(Map &&other) noexcept
     : GameObject(std::move(other)), width(other.width), height(other.height),
-      length(other.length), model(other.model), mesh(other.mesh),
-      texture(other.texture) {
+      length(other.length), model(other.model), r3dModel(other.r3dModel),
+      mesh(other.mesh), texture(other.texture) {
   name = "Map";
   other.model = {};
+  other.r3dModel = {0};
   other.mesh = {};
   other.texture = {};
 }
@@ -51,6 +55,8 @@ Map &Map::operator=(Map &&other) noexcept {
   if (this != &other) {
     if (model.meshCount > 0)
       UnloadModel(model);
+    if (r3dModel.meshCount > 0)
+      R3D_UnloadModel(r3dModel, true);
     if (mesh.vertexCount > 0)
       UnloadMesh(mesh);
     if (texture.id > 0)
@@ -60,10 +66,12 @@ Map &Map::operator=(Map &&other) noexcept {
     height = other.height;
     length = other.length;
     model = other.model;
+    r3dModel = other.r3dModel;
     mesh = other.mesh;
     texture = other.texture;
 
     other.model = {};
+    other.r3dModel = {0};
     other.mesh = {};
     other.texture = {};
     name = other.name;
@@ -73,7 +81,9 @@ Map &Map::operator=(Map &&other) noexcept {
 
 void Map::draw() {
   // Use r3d for PBR terrain rendering (called within R3D_Begin/R3D_End)
-  R3D_DrawModel(model, position, 1.0f, WHITE);
+  if (r3dModel.meshCount > 0) {
+    R3D_DrawModel(r3dModel, position, 1.0f);
+  }
 }
 
 void Map::drawSea() {
@@ -99,7 +109,11 @@ std::unique_ptr<Map> mapFromHeightmap(const std::string &filename, float width,
 
   model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture;
   UnloadImage(image);
-  return std::make_unique<Map>(width, height, length, model, mesh, texture);
+  auto map = std::make_unique<Map>(width, height, length, model, mesh, texture);
+  if (exported) {
+    map->r3dModel = R3D_LoadModel("map.obj");
+  }
+  return map;
 }
 
 std::unique_ptr<Map> mapFromModel(const std::string &filename) {
@@ -115,7 +129,9 @@ std::unique_ptr<Map> mapFromModel(const std::string &filename) {
   // Centra il modello traslando di -center
   Matrix translation = MatrixTranslate(-center.x, -center.y, -center.z);
   model.transform = MatrixMultiply(model.transform, translation);
-  return std::make_unique<Map>(model);
+  auto map = std::make_unique<Map>(model);
+  map->r3dModel = R3D_LoadModel(filename.c_str());
+  return map;
 }
 void Map::loadSeaShader() {
   seaShaderLoaded =

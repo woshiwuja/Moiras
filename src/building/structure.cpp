@@ -14,18 +14,30 @@ Structure::Structure()
 
 Structure::~Structure() {
   // ModelInstance destructor handles cleanup automatically
+  if (m_r3dModel.meshCount > 0) {
+    R3D_UnloadModel(m_r3dModel, true);
+  }
 }
 
 Structure::Structure(Structure &&other) noexcept
     : GameObject(std::move(other)),
-      modelInstance(std::move(other.modelInstance)), eulerRot(other.eulerRot),
+      modelInstance(std::move(other.modelInstance)),
+      m_r3dModel(other.m_r3dModel),
+      eulerRot(other.eulerRot),
       rotation(other.rotation), scale(other.scale), isPlaced(other.isPlaced),
-      modelPath(std::move(other.modelPath)), bounds(other.bounds) {}
+      modelPath(std::move(other.modelPath)), bounds(other.bounds) {
+  other.m_r3dModel = {0};
+}
 
 Structure &Structure::operator=(Structure &&other) noexcept {
   if (this != &other) {
     GameObject::operator=(std::move(other));
     modelInstance = std::move(other.modelInstance);
+    if (m_r3dModel.meshCount > 0) {
+      R3D_UnloadModel(m_r3dModel, true);
+    }
+    m_r3dModel = other.m_r3dModel;
+    other.m_r3dModel = {0};
     eulerRot = other.eulerRot;
     rotation = other.rotation;
     scale = other.scale;
@@ -39,7 +51,7 @@ Structure &Structure::operator=(Structure &&other) noexcept {
 void Structure::update() { GameObject::update(); }
 
 void Structure::draw() {
-  if (!isVisible || !modelInstance.isValid())
+  if (!isVisible || m_r3dModel.meshCount == 0)
     return;
 
   // Calcola la matrice di trasformazione usando il quaternione (include la normale del terreno)
@@ -50,16 +62,7 @@ void Structure::draw() {
   Matrix transform =
       MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-  // Build a temporary Model struct from modelInstance for r3d
-  Model tempModel = {0};
-  tempModel.transform = MatrixIdentity();
-  tempModel.meshCount = modelInstance.meshCount();
-  tempModel.meshes = modelInstance.meshes();
-  tempModel.materialCount = modelInstance.materialCount();
-  tempModel.materials = modelInstance.materials();
-  tempModel.meshMaterial = modelInstance.meshMaterial();
-
-  R3D_DrawModelPro(tempModel, transform, WHITE);
+  R3D_DrawModelPro(m_r3dModel, transform);
 }
 // GameObject::draw();
 
@@ -80,6 +83,7 @@ void Structure::loadModel(ModelManager &manager, const std::string &path) {
   unloadModel();
   modelPath = path;
   modelInstance = manager.acquire(path);
+  m_r3dModel = R3D_LoadModel(path.c_str());
 
   if (modelInstance.isValid()) {
     updateBounds();
@@ -90,6 +94,10 @@ void Structure::loadModel(ModelManager &manager, const std::string &path) {
 }
 
 void Structure::unloadModel() {
+  if (m_r3dModel.meshCount > 0) {
+    R3D_UnloadModel(m_r3dModel, true);
+    m_r3dModel = {0};
+  }
   modelInstance = ModelInstance(); // Release via move assignment
 }
 

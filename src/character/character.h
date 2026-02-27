@@ -4,6 +4,7 @@
 #include "../resources/model_manager.h"
 #include "../map/map.h"
 #include <raylib.h>
+#include <r3d/r3d.h>
 #include <string>
 
 namespace moiras {
@@ -29,7 +30,8 @@ public:
   int m_lastUpdatedFrame = -1;
   float m_animationTimer = 0.0f;
   bool m_isAnimating = false;
-  Model m_cachedModel = {0}; // Cached Model struct to avoid reconstruction every frame
+  Model m_cachedModel = {0}; // Cached Model struct for animation bone updates
+  R3D_Model m_r3dModel = {0}; // r3d model for PBR rendering
 
   Character();
   ~Character();

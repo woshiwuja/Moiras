@@ -43,6 +43,9 @@ namespace moiras
         TraceLog(LOG_INFO, "Destroying character: %s", name.c_str());
         // ModelInstance destructor handles cleanup automatically
         unloadAnimations();
+        if (m_r3dModel.meshCount > 0) {
+            R3D_UnloadModel(m_r3dModel, true);
+        }
     }
 
     Character::Character(Character &&other) noexcept
@@ -104,11 +107,20 @@ namespace moiras
     {
         TraceLog(LOG_INFO, "Loading model: %s", path.c_str());
 
+        // Release old r3d model
+        if (m_r3dModel.meshCount > 0) {
+            R3D_UnloadModel(m_r3dModel, true);
+            m_r3dModel = {0};
+        }
+
         // Release old model instance if any
         modelInstance = ModelInstance();
 
-        // Acquire new model instance from manager
+        // Acquire new model instance from manager (for animations and navmesh)
         modelInstance = manager.acquire(path);
+
+        // Load r3d model for PBR rendering
+        m_r3dModel = R3D_LoadModel(path.c_str());
 
         if (modelInstance.isValid())
         {
@@ -143,6 +155,10 @@ namespace moiras
 
     void Character::unloadModel()
     {
+        if (m_r3dModel.meshCount > 0) {
+            R3D_UnloadModel(m_r3dModel, true);
+            m_r3dModel = {0};
+        }
         modelInstance = ModelInstance(); // Release via move assignment
     }
 
@@ -179,7 +195,7 @@ namespace moiras
         if (!isVisible)
             return;
 
-        if (modelInstance.isValid())
+        if (m_r3dModel.meshCount > 0)
         {
             Quaternion q = QuaternionFromEuler(
                 eulerRot.x * DEG2RAD,
@@ -195,19 +211,7 @@ namespace moiras
             Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
             Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
 
-            // Build a temporary Model struct from modelInstance data for r3d
-            Model tempModel = {0};
-            tempModel.transform = MatrixIdentity();
-            tempModel.meshCount = modelInstance.meshCount();
-            tempModel.meshes = modelInstance.meshes();
-            tempModel.materialCount = modelInstance.materialCount();
-            tempModel.materials = modelInstance.materials();
-            tempModel.meshMaterial = modelInstance.meshMaterial();
-            tempModel.boneCount = modelInstance.boneCount();
-            tempModel.bones = modelInstance.bones();
-            tempModel.bindPose = modelInstance.bindPose();
-
-            R3D_DrawModelPro(tempModel, transform, WHITE);
+            R3D_DrawModelPro(m_r3dModel, transform);
         }
         else
         {

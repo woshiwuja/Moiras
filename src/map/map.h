@@ -3,6 +3,7 @@
 #include "../navigation/navmesh.h"
 #include "rlgl.h"
 #include <raylib.h>
+#include <r3d/r3d.h>
 #include <functional>
 #include <string>
 namespace moiras {
@@ -43,6 +44,7 @@ std::vector<Vector3> debugPath;
   float length;
   Vector3 position = {0., 0., 0.};
   Model model;
+  R3D_Model r3dModel = {0}; // r3d model for PBR rendering
   Mesh mesh;
   Texture texture;
   std::string seaShaderVertex;

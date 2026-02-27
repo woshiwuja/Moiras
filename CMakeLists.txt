@@ -35,19 +35,30 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
 
-# Fetch r3d (includes vendored raylib 5.5 as submodule)
+# Fetch r3d (includes vendored raylib 5.5 and assimp as submodules)
 # r3d provides PBR rendering, lighting, shadows, post-processing and frustum culling
 set(R3D_RAYLIB_VENDORED ON CACHE BOOL "" FORCE)
-set(R3D_SUPPORT_ASSIMP OFF CACHE BOOL "" FORCE)
+set(R3D_ASSIMP_VENDORED ON CACHE BOOL "" FORCE)   # use vendored assimp submodule
 set(R3D_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(R3D_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     r3d
     GIT_REPOSITORY https://github.com/Bigfoot71/r3d.git
     GIT_TAG v0.8
-    GIT_SUBMODULES "external/raylib"
+    GIT_SUBMODULES "external/raylib external/assimp"
 )
 FetchContent_MakeAvailable(r3d)
+
+# r3d's vendored raylib disables GLTF/OBJ/IQM to avoid Assimp conflicts.
+# Re-enable them so raylib can still load models for animations and navmesh
+# (rendering uses R3D_LoadModel via Assimp instead).
+if(TARGET raylib)
+    target_compile_definitions(raylib PRIVATE
+        SUPPORT_FILEFORMAT_GLTF=1
+        SUPPORT_FILEFORMAT_OBJ=1
+        SUPPORT_FILEFORMAT_IQM=1
+    )
+endif()
 
 # Fetch JoltPhysics
 FetchContent_Declare(

@@ -3,6 +3,7 @@
 #include "../game/game_object.h"
 #include "../resources/model_manager.h"
 #include <raylib.h>
+#include <r3d/r3d.h>
 #include <string>
 
 namespace moiras {
@@ -11,6 +12,7 @@ namespace moiras {
 class Structure : public GameObject {
 public:
     ModelInstance modelInstance;
+    R3D_Model m_r3dModel = {0}; // r3d model for PBR rendering
     Vector3 eulerRot;
     Quaternion rotation;
     float scale;

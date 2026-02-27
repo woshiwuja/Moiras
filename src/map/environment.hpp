@@ -18,13 +18,14 @@ enum class RockMeshType {
 };
 
 struct RockPatch {
-    Mesh mesh;
-    Model model;
+    R3D_Mesh r3dMesh = {};       // for primitive types (CUBE, SPHERE, etc.)
+    R3D_Material r3dMaterial = {}; // for primitive types
+    R3D_Model r3dModel = {};     // for CUSTOM type (loaded via R3D_LoadModel)
     RockMeshType meshType;
     std::string customName; // nome file per patch CUSTOM
     std::vector<Matrix> transforms;
 
-    RockPatch() : mesh{0}, model{0}, meshType(RockMeshType::CUBE) {}
+    RockPatch() : r3dMesh{}, r3dMaterial{}, r3dModel{}, meshType(RockMeshType::CUBE) {}
 };
 
 class EnvironmentalObject : public GameObject {
@@ -38,7 +39,6 @@ private:
     // Camera culling
     Vector3 m_cameraPos;
     float m_cullDistance;
-    std::vector<Matrix> m_visibleBuffer; // temp buffer per draw
 
     // Brush
     bool m_brushMode;
@@ -49,7 +49,6 @@ private:
     // Model file list per sidebar
     std::vector<std::string> m_modelFiles;
 
-    Mesh generateMesh(RockMeshType type, float size);
     int findOrCreatePatch(RockMeshType type);
 
 public:
